@@ -1,5 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# Compatible with PowerShell 5.1 and 7+ – Host status strict (Stable only if all platforms Stable)
+# Compatible with PowerShell 5.1 and 7+ – Strict host status
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -94,20 +94,24 @@ foreach ($line in $statusLines) {
     $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
 }
 
-# Strict host status: Stable ONLY if ALL platforms are Stable
-$hostStatus = "Stable"
-$hostColor = "#0f0"
+# Strict host status: Hierarchical check
+$hasNotStable = $false
+$hasPotentially = $false
 
 foreach ($line in $statusLines) {
-    if ($line.Status -eq "Potentially unstable" -and $hostStatus -eq "Stable") {
-        $hostStatus = "Potentially unstable"
-        $hostColor = "#ffa500"
-    }
-    if ($line.Status -eq "Not stable") {
-        $hostStatus = "Not stable"
-        $hostColor = "#ff69b4"
-        break
-    }
+    if ($line.Status -eq "Not stable") { $hasNotStable = $true }
+    if ($line.Status -eq "Potentially unstable") { $hasPotentially = $true }
+}
+
+if ($hasNotStable) {
+    $hostStatus = "Not stable"
+    $hostColor = "#ff69b4"
+} elseif ($hasPotentially) {
+    $hostStatus = "Potentially unstable"
+    $hostColor = "#ffa500"
+} else {
+    $hostStatus = "Stable"
+    $hostColor = "#0f0"
 }
 
 # Terminal output
