@@ -14,7 +14,7 @@ if ($psMajor -lt 7) {
     Write-Host "PowerShell 7+ detected – full features available" -ForegroundColor Green
 }
 
-# Optional: If pwsh.exe exists, suggest relaunch (non-blocking)
+# Optional: Suggest relaunch in pwsh if installed
 if ((Get-Command pwsh -ErrorAction SilentlyContinue) -and $psMajor -lt 7) {
     $choice = Read-Host "PowerShell 7 is installed. Relaunch in pwsh for better compatibility? (y/n)"
     if ($choice -match '^[yY]') {
@@ -47,6 +47,7 @@ Write-Host ""
 $adminChoice = Read-Host "Do you have admin rights for better detail? (y/n)"
 if ($adminChoice -match '^[yY]') {
     Write-Host "Requesting elevation..." -ForegroundColor Yellow
+    # Try elevation - if it fails or user cancels, fall back to non-admin
     Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1 | iex" -Verb RunAs -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Elevation failed or cancelled. Running without admin." -ForegroundColor Yellow
