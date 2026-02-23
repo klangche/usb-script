@@ -6,7 +6,7 @@ echo "USB Tree Diagnostic Tool - Terminal-läge"
 echo "Plattform: $(uname -s) $(uname -m)"
 echo ""
 
-read -p "Kör med sudo för bättre detaljer? (y/n) " adminChoice
+read -p "Do you have admin preveliges? (y/n) " adminChoice
 if [[ $adminChoice =~ ^[yY]$ ]]; then
     sudo -v
     SUDO="sudo "
@@ -76,9 +76,10 @@ cat <<EOF > "$outHtml"
 EOF
 
 echo "Rapport sparad som $outTxt"
-read -p "Öppna HTML-rapport i webbläsare? (y/n) " openHtml
+read -p "open HTML-rapport i browser? (y/n) " openHtml
 if [[ $openHtml =~ ^[yY]$ ]]; then
     if command -v xdg-open >/dev/null; then xdg-open "$outHtml"
     elif command -v open >/dev/null; then open "$outHtml"
     elif command -v start >/dev/null; then start "$outHtml"; fi
+
 fi
