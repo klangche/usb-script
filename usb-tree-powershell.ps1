@@ -86,4 +86,5 @@ foreach ($d in $allDevices) {
     } catch {
         $map[$d.InstanceId] = @{ 
             Name = if ($d.FriendlyName) { $d.FriendlyName } else { $d.Name }
-            Parent = $
+            Parent = $parent
+
