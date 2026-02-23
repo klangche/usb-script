@@ -21,8 +21,7 @@
 # =============================================================================
 
 # Auto-fix Windows line endings if present (runs in memory)
-if [[ "$(head -1 <<<"$(cat)" 2>/dev/null)" =~ 
-$ ]]; then
+if [[ "$(head -1 <<<"$(cat)" 2>/dev/null)" =~ \r$ ]]; then
     tr -d '\r' | bash
     exit 0
 fi
@@ -366,3 +365,4 @@ EOF
 
 # Run main function
 main "$@"
+
