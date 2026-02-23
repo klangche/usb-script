@@ -14,28 +14,6 @@ Paste this command into **PowerShell** (Windows) or **Terminal** (macOS/Linux):
 irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex
 ```
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>USB Tree Diagnostic Tool</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.6; background: #f8f9fa; color: #333; padding: 20px; }
-    h1, h2 { color: #2c3e50; }
-    pre, .terminal { background: #000; color: #0f0; font-family: Consolas, 'Courier New', monospace; padding: 16px; border-radius: 8px; overflow-x: auto; line-height: 1.4; white-space: pre; margin: 1em 0; position: relative; }
-    .terminal { border: 1px solid #333; }
-    .copy-btn { position: absolute; top: 8px; right: 8px; background: #444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
-    .copy-btn:hover { background: #666; }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #eee; }
-    .stable { color: #0f0; }
-    .unstable { color: #ffa500; }
-    .not-stable { color: #ff69b4; }
-  </style>
-</head>
-<body>
 
 <h1>USB Tree Diagnostic Tool</h1>
 
@@ -183,15 +161,6 @@ Open HTML report in browser? (y/n)
 
 <p>Questions or improvements? <a href="https://github.com/klangche/usb-script/issues">Open an issue</a>.</p>
 
-<script>
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    alert('Command copied to clipboard!');
-  }).catch(err => {
-    alert('Failed to copy: ' + err);
-  });
-}
-</script>
 
 </body>
 </html>
