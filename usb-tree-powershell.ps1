@@ -8,7 +8,7 @@
 # - Smart admin detection (doesn't ask twice)
 # - Tree view with proper hierarchy
 # - Stability assessment per platform
-# - Basic HTML report (terminal style)
+# - HTML report (exact PowerShell colors)
 # - Optional Deep Analytics (clean terminal view)
 # =============================================================================
 
@@ -87,7 +87,7 @@ foreach ($d in $devices) {
     }
 }
 
-# Build tree hierarchy - FIXED: changed $pid to $parentId
+# Build tree hierarchy - Fixed: changed $pid to $parentId
 $roots = @()
 foreach ($id in $map.Keys) {
     $node = $map[$id]
@@ -207,9 +207,9 @@ Write-Host "USB TREE" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host $treeOutput
 Write-Host ""
-Write-Host "Furthest jumps: $maxHops"
-Write-Host "Number of tiers: $numTiers"
-Write-Host "Total devices: $deviceCount"
+Write-Host "Furthest jumps: $maxHops" -ForegroundColor Gray
+Write-Host "Number of tiers: $numTiers" -ForegroundColor Gray
+Write-Host "Total devices: $deviceCount" -ForegroundColor Gray
 Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "STABILITY PER PLATFORM (based on $maxHops hops)" -ForegroundColor Cyan
@@ -221,7 +221,7 @@ Write-Host "HOST SUMMARY" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "Host status: " -NoNewline
 Write-Host "$hostStatus" -ForegroundColor $hostColor
-Write-Host "Stability Score: $stabilityScore/10"
+Write-Host "Stability Score: $stabilityScore/10" -ForegroundColor Gray
 Write-Host ""
 
 # =============================================================================
@@ -231,7 +231,7 @@ Write-Host ""
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
 # =============================================================================
-# BASIC HTML REPORT (TERMINAL STYLE)
+# HTML REPORT - EXAKT SOM POWERSHELL
 # =============================================================================
 $html = @"
 <!DOCTYPE html>
@@ -239,34 +239,52 @@ $html = @"
 <head>
     <title>USB Tree Report</title>
     <style>
-        body { background: #000; color: #ccc; font-family: 'Consolas', monospace; padding: 20px; }
-        pre { color: #0f0; margin: 0; }
-        .stable { color: #0f0; }
-        .warning { color: #ffa500; }
-        .critical { color: #ff69b4; }
+        body { 
+            background: #012456; 
+            color: #e0e0e0; 
+            font-family: 'Consolas', 'Courier New', monospace; 
+            padding: 20px;
+            font-size: 14px;
+        }
+        pre { 
+            margin: 0; 
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #e0e0e0;
+        }
+        .cyan { color: #00ffff; }
+        .green { color: #00ff00; }
+        .yellow { color: #ffff00; }
+        .magenta { color: #ff00ff; }
+        .white { color: #ffffff; }
+        .gray { color: #c0c0c0; }
     </style>
 </head>
 <body>
 <pre>
-==============================================================================
-USB TREE REPORT - $dateStamp
-==============================================================================
+<span class="cyan">==============================================================================</span>
+<span class="cyan">USB TREE REPORT - $dateStamp</span>
+<span class="cyan">==============================================================================</span>
 
 $treeOutput
 
-Furthest jumps: $maxHops
-Number of tiers: $numTiers
-Total devices: $deviceCount
+<span class="gray">Furthest jumps: $maxHops</span>
+<span class="gray">Number of tiers: $numTiers</span>
+<span class="gray">Total devices: $deviceCount</span>
 
-==============================================================================
-STABILITY PER PLATFORM (based on $maxHops hops)
-==============================================================================
-$statusSummaryTerminal
-==============================================================================
-HOST SUMMARY
-==============================================================================
-Host status: $hostStatus
-Stability Score: $stabilityScore/10
+<span class="cyan">==============================================================================</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($line in $statusLines) {
+    $color = if ($line.Status -eq "STABLE") { "green" } 
+             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
+             else { "magenta" }
+    "  <span class='$color'>$($line.Platform.PadRight(25)) $($line.Status)</span>"
+})
+<span class="cyan">==============================================================================</span>
+<span class="cyan">HOST SUMMARY</span>
+<span class="cyan">==============================================================================</span>
+  <span class="$($hostColor.ToLower())">Host status: $hostStatus</span>
+  <span class="gray">Stability Score: $stabilityScore/10</span>
 </pre>
 </body>
 </html>
@@ -277,7 +295,7 @@ $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -eq 'y') { Start-Process $outHtml }
 
 # =============================================================================
-# DEEP ANALYTICS - Clean terminal view (like before)
+# DEEP ANALYTICS - Clean terminal view
 # =============================================================================
 if ($isElevated) {
     Write-Host ""
@@ -395,70 +413,96 @@ if ($isElevated) {
             Write-Host "==============================================================================" -ForegroundColor Magenta
             Write-Host "DEEP ANALYTICS COMPLETE" -ForegroundColor Magenta
             Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))"
+            Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
             Write-Host "Final status: " -NoNewline
             Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
-            Write-Host "Random errors: $script:RandomErrors"
-            Write-Host "Re-handshakes: $script:Rehandshakes"
+            Write-Host "Random errors: $script:RandomErrors" -ForegroundColor Gray
+            Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
             Write-Host ""
             
-            # BASIC HTML REPORT for Deep Analytics (with tree view included)
+            # HTML REPORT for Deep Analytics - EXAKT SOM POWERSHELL
             $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>USB Deep Analytics Report</title>
     <style>
-        body { background: #000; color: #ccc; font-family: 'Consolas', monospace; padding: 20px; }
-        pre { color: #0f0; margin: 0; }
-        .stable { color: #0f0; }
-        .warning { color: #ffa500; }
-        .critical { color: #ff69b4; }
-        .event { margin: 2px 0; }
+        body { 
+            background: #012456; 
+            color: #e0e0e0; 
+            font-family: 'Consolas', 'Courier New', monospace; 
+            padding: 20px;
+            font-size: 14px;
+        }
+        pre { 
+            margin: 0; 
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #e0e0e0;
+        }
+        .cyan { color: #00ffff; }
+        .green { color: #00ff00; }
+        .yellow { color: #ffff00; }
+        .magenta { color: #ff00ff; }
+        .white { color: #ffffff; }
+        .gray { color: #c0c0c0; }
     </style>
 </head>
 <body>
 <pre>
-==============================================================================
-USB TREE REPORT - $dateStamp
-==============================================================================
+<span class="cyan">==============================================================================</span>
+<span class="cyan">USB TREE REPORT - $dateStamp</span>
+<span class="cyan">==============================================================================</span>
 
 $treeOutput
 
-Furthest jumps: $maxHops
-Number of tiers: $numTiers
-Total devices: $deviceCount
+<span class="gray">Furthest jumps: $maxHops</span>
+<span class="gray">Number of tiers: $numTiers</span>
+<span class="gray">Total devices: $deviceCount</span>
 
-==============================================================================
-STABILITY PER PLATFORM (based on $maxHops hops)
-==============================================================================
-$statusSummaryTerminal
-==============================================================================
-HOST SUMMARY
-==============================================================================
-Host status: $hostStatus
-Stability Score: $stabilityScore/10
+<span class="cyan">==============================================================================</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($line in $statusLines) {
+    $color = if ($line.Status -eq "STABLE") { "green" } 
+             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
+             else { "magenta" }
+    "  <span class='$color'>$($line.Platform.PadRight(25)) $($line.Status)</span>"
+})
+<span class="cyan">==============================================================================</span>
+<span class="cyan">HOST SUMMARY</span>
+<span class="cyan">==============================================================================</span>
+  <span class="$($hostColor.ToLower())">Host status: $hostStatus</span>
+  <span class="gray">Stability Score: $stabilityScore/10</span>
 
-==============================================================================
-DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal)) elapsed
-==============================================================================
+<span class="cyan">==============================================================================</span>
+<span class="cyan">DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal)) elapsed</span>
+<span class="cyan">==============================================================================</span>
 
-Final status: $(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })
-Random errors: $script:RandomErrors
-Re-handshakes: $script:Rehandshakes
+<span class="gray">Final status: </span><span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
+<span class="gray">Random errors: </span><span class="$(if ($script:RandomErrors -gt 0) { 'yellow' } else { 'gray' })">$script:RandomErrors</span>
+<span class="gray">Re-handshakes: </span><span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
 
-==============================================================================
-EVENT LOG (in chronological order)
-==============================================================================
-$(Get-Content $deepLog | ForEach-Object { $_ })
+<span class="cyan">==============================================================================</span>
+<span class="cyan">EVENT LOG (in chronological order)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($event in (Get-Content $deepLog)) {
+    if ($event -match "ERROR") {
+        "  <span class='magenta'>$event</span>"
+    } elseif ($event -match "REHANDSHAKE") {
+        "  <span class='yellow'>$event</span>"
+    } else {
+        "  <span class='gray'>$event</span>"
+    }
+})
 </pre>
 </body>
 </html>
 "@
             $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
             
-            Write-Host "Log file: $deepLog"
-            Write-Host "HTML report: $deepHtml"
+            Write-Host "Log file: $deepLog" -ForegroundColor Gray
+            Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
+            Write-Host ""
             
             $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
             if ($openDeep -eq 'y') { Start-Process $deepHtml }
