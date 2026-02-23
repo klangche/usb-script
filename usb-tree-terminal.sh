@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # usb-tree-terminal.sh - USB Tree Diagnostic for terminal
-# With strict host status: Stable ONLY if all platforms are Stable
+# With strict host status limited by Mac Apple Silicon
 
 echo "USB Tree Diagnostic Tool - Terminal mode"
 echo "Platform: $(uname -s) $(uname -m)"
@@ -27,9 +27,9 @@ fi
 
 # Basic tree output (placeholder - improve parsing later)
 treeOutput=$(echo "$USB_RAW" | sed 's/^/  /')
-maxHops=4  # Placeholder
+maxHops=4  # Placeholder - add real parsing
 numTiers=$((maxHops + 1))
-deviceCount=14  # Placeholder
+deviceCount=14  # Placeholder - count from raw
 stabilityScore=$((9 - maxHops))
 
 # Platforms and limits
@@ -76,25 +76,41 @@ done
 echo -e "\033[36m=== Stability per platform (based on $maxHops hops) ===\033[0m"
 echo -e "$statusSummaryTerminal" | sed "s/Stable/\033[32mStable\033[0m/g; s/Potentially unstable/\033[33mPotentially unstable\033[0m/g; s/Not stable/\033[95mNot stable\033[0m/g"
 
-# Strict host status: Hierarchical check
-hasNotStable=false
-hasPotentially=false
-
+# Strict host status: Mac Apple Silicon is the bottleneck
+macAsStatus=""
 for line in "${sortedLines[@]}"; do
-    status=$(echo $line | cut -d':' -f2-)
-    if [[ $status == "Not stable" ]]; then hasNotStable=true; fi
-    if [[ $status == "Potentially unstable" ]]; then hasPotentially=true; fi
+    if [[ $line == *"Mac Apple Silicon:"* ]]; then
+        macAsStatus=$(echo $line | cut -d':' -f2-)
+        break
+    fi
 done
 
-if $hasNotStable; then
+if [[ $macAsStatus == "Not stable" ]]; then
     hostStatus="Not stable"
     hostColor="\033[95m"
-elif $hasPotentially; then
+elif [[ $macAsStatus == "Potentially unstable" ]]; then
     hostStatus="Potentially unstable"
     hostColor="\033[33m"
 else
-    hostStatus="Stable"
-    hostColor="\033[32m"
+    # If Mac AS is Stable, use the worst from others
+    hasNotStable=false
+    hasPotentially=false
+    for line in "${sortedLines[@]}"; do
+        if [[ $line == *"Mac Apple Silicon:"* ]]; then continue; fi
+        status=$(echo $line | cut -d':' -f2-)
+        if [[ $status == "Not stable" ]]; then hasNotStable=true; fi
+        if [[ $status == "Potentially unstable" ]]; then hasPotentially=true; fi
+    done
+    if $hasNotStable; then
+        hostStatus="Not stable"
+        hostColor="\033[95m"
+    elif $hasPotentially; then
+        hostStatus="Potentially unstable"
+        hostColor="\033[33m"
+    else
+        hostStatus="Stable"
+        hostColor="\033[32m"
+    fi
 fi
 
 # Terminal summary
