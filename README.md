@@ -19,20 +19,6 @@ irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree
 
 <p>A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.</p>
 
-<h2>Target audience</h2>
-<ul>
-  <li>Everyday users who want to quickly check if their USB chain is stable</li>
-  <li>Technicians and sales people who need to share clear, professional diagnostics</li>
-</ul>
-
-<h2>How to Run (one single line)</h2>
-
-<p>Paste this command into <strong>PowerShell</strong> (Windows) or <strong>Terminal</strong> (macOS/Linux):</p>
-
-<div class="terminal">
-  <button class="copy-btn" onclick="copyToClipboard('irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex')">Copy</button>
-  <pre id="command">irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex</pre>
-</div>
 
 <p>The tool asks only two questions:</p>
 <ul>
