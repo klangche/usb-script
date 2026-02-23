@@ -67,6 +67,8 @@ $allDevices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Sel
 $devices = $allDevices | Where-Object { -not $_.IsHub }
 $hubs = $allDevices | Where-Object { $_.IsHub }
 
+Write-Host "Found $($devices.Count) devices and $($hubs.Count) hubs" -ForegroundColor Gray
+
 # Build parent-child relationship map for ALL devices (including hubs for tree structure)
 $map = @{}
 foreach ($d in $allDevices) {
@@ -241,7 +243,7 @@ Write-Host ""
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
 # =============================================================================
-# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund)
+# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund, white-space: pre)
 # =============================================================================
 $html = @"
 <!DOCTYPE html>
@@ -260,7 +262,7 @@ $html = @"
             margin: 0; 
             font-family: 'Consolas', 'Courier New', monospace;
             color: #e0e0e0;
-            white-space: pre-wrap;
+            white-space: pre;
         }
         .cyan { color: #00ffff; }
         .green { color: #00ff00; }
@@ -433,7 +435,7 @@ if ($isElevated) {
             Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
             Write-Host ""
             
-            # HTML REPORT for Deep Analytics
+            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund, white-space: pre)
             $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
@@ -451,7 +453,7 @@ if ($isElevated) {
             margin: 0; 
             font-family: 'Consolas', 'Courier New', monospace;
             color: #e0e0e0;
-            white-space: pre-wrap;
+            white-space: pre;
         }
         .cyan { color: #00ffff; }
         .green { color: #00ff00; }
