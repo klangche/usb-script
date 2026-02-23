@@ -1,0 +1,8 @@
+# Changelog
+
+All notable changes to this project will be documented here.
+
+## [0.5.6] - 2026-02-23
+
+### Publish
+-first version that i publish outside my own homelab.
