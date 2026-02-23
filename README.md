@@ -170,12 +170,3 @@ The output is normalized into a tree structure and optionally exported as HTML.
 - Virtual USB devices may not appear
 - Performance depends on OS enumeration speed
 
-## Installation
-
-No installation required.
-
-PowerShell:
-irm https://raw.githubusercontent.com/klangche/usb-script/main/usb.ps1 | iex
-
-Bash:
-curl -s https://raw.githubusercontent.com/klangche/usb-script/main/usb.sh | bash
