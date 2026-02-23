@@ -154,5 +154,28 @@ Open HTML report in browser? (y/n)
 <p>Questions or improvements? <a href="https://github.com/klangche/usb-script/issues">Open an issue</a>.</p>
 
 
-</body>
-</html>
+## How it works
+
+The script queries native OS USB enumeration tools:
+
+- Windows: WMI / PnPDevice
+- Linux: lsusb + sysfs
+- macOS: system_profiler SPUSBDataType
+
+The output is normalized into a tree structure and optionally exported as HTML.
+
+## Limitations
+
+- Requires administrator privileges on some systems
+- Virtual USB devices may not appear
+- Performance depends on OS enumeration speed
+
+## Installation
+
+No installation required.
+
+PowerShell:
+irm https://raw.githubusercontent.com/klangche/usb-script/main/usb.ps1 | iex
+
+Bash:
+curl -s https://raw.githubusercontent.com/klangche/usb-script/main/usb.sh | bash
