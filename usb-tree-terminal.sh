@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # usb-tree-terminal.sh - USB Tree Diagnostic for terminal
-# With strict host status limited by Mac Apple Silicon
+# Host status capped by Mac Apple Silicon
 
 echo "USB Tree Diagnostic Tool - Terminal mode"
 echo "Platform: $(uname -s) $(uname -m)"
@@ -25,11 +25,11 @@ else
     USB_RAW=$($SUDO lsusb -t 2>/dev/null || echo "lsusb not found")
 fi
 
-# Basic tree output (placeholder - improve parsing later)
+# Basic tree output
 treeOutput=$(echo "$USB_RAW" | sed 's/^/  /')
 maxHops=4  # Placeholder - add real parsing
 numTiers=$((maxHops + 1))
-deviceCount=14  # Placeholder - count from raw
+deviceCount=14  # Placeholder
 stabilityScore=$((9 - maxHops))
 
 # Platforms and limits
@@ -92,7 +92,7 @@ elif [[ $macAsStatus == "Potentially unstable" ]]; then
     hostStatus="Potentially unstable"
     hostColor="\033[33m"
 else
-    # If Mac AS is Stable, use the worst from others
+    # If Mac AS is Stable, use worst from others
     hasNotStable=false
     hasPotentially=false
     for line in "${sortedLines[@]}"; do
