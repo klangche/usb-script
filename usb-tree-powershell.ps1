@@ -14,7 +14,7 @@ $outTxt = "$env:TEMP\usb-tree-report-$dateStamp.txt"
 $outHtml = "$env:TEMP\usb-tree-report-$dateStamp.html"
 
 # Get devices with better name fallback
-$devices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, @{n='Name';e={$_.FriendlyName ?? $_.Name ?? $_.InstanceId}}
+$devices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, @{n='Name';e={if ($_.FriendlyName) { $_.FriendlyName } elseif ($_.Name) { $_.Name } else { $_.InstanceId }}}
 
 $map = @{}
 foreach ($d in $devices) {
@@ -110,3 +110,4 @@ $html | Out-File $outHtml
 Write-Host "Report saved as $outTxt"
 $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -match '^[yY]') { Start-Process $outHtml }
+
