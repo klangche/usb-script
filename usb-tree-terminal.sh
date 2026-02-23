@@ -20,9 +20,9 @@
 # - \033[36m Cyan: Headers and info
 # =============================================================================
 
-# Auto-fix Windows line endings if present (runs in memory)
-if [[ "$(head -1 <<<"$(cat)" 2>/dev/null)" =~ \r$ ]]; then
-    tr -d '\r' | bash
+# Auto-fix fungerar bara när skriptet körs från en fil
+if [[ -f "$0" ]] && [[ "$(head -1 "$0" 2>/dev/null)" =~ \r$ ]]; then
+    tr -d '\r' < "$0" | bash
     exit 0
 fi
 
