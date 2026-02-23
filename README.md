@@ -1,12 +1,15 @@
-```powershell
-irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
-```
-Paste above command into **PowerShell** (Windows) or **Terminal** (macOS/Linux)
+
 
 # USB Tree Diagnostic Tool
 ![Version](https://img.shields.io/badge/version-0.5.6-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+```powershell
+irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
+```
+Paste above command into **PowerShell** (Windows) or **Terminal** (macOS/Linux)
+
 
 A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.
 
