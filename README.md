@@ -1,181 +1,150 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>USB Tree Diagnostic Tool</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.6; background: #f8f9fa; color: #333; padding: 20px; }
-    h1, h2 { color: #2c3e50; }
-    pre, .terminal { background: #000; color: #0f0; font-family: Consolas, 'Courier New', monospace; padding: 16px; border-radius: 8px; overflow-x: auto; line-height: 1.4; white-space: pre; margin: 1em 0; position: relative; }
-    .terminal { border: 1px solid #333; }
-    .copy-btn { position: absolute; top: 8px; right: 8px; background: #444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
-    .copy-btn:hover { background: #666; }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #eee; }
-    .stable { color: #0f0; }
-    .unstable { color: #ffa500; }
-    .not-stable { color: #ff69b4; }
-  </style>
-</head>
-<body>
+# USB Tree Diagnostic Tool
 
-<h1>USB Tree Diagnostic Tool</h1>
+A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.
 
-<p>A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.</p>
+**Target audience**  
+- Everyday users who want to quickly check if their USB chain is stable  
+- Technicians and sales people who need to share clear, professional diagnostics
 
-<h2>Target audience</h2>
-<ul>
-  <li>Everyday users who want to quickly check if their USB chain is stable</li>
-  <li>Technicians and sales people who need to share clear, professional diagnostics</li>
-</ul>
+## How to Run (one single line)
 
-<h2>How to Run (one single line)</h2>
+Paste this command into **PowerShell** (Windows) or **Terminal** (macOS/Linux):
 
-<p>Paste this command into <strong>PowerShell</strong> (Windows) or <strong>Terminal</strong> (macOS/Linux):</p>
+```powershell
+irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex
 
-<div class="terminal">
-  <button class="copy-btn" onclick="copyToClipboard('irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex')">Copy</button>
-  <pre id="command">irm https://raw.githubusercontent.com/klangche/usb-script/main/Activate-usb-tree.ps1 | iex</pre>
-</div>
 
-<p>The tool asks only two questions:</p>
-<ul>
-  <li>Run with admin/sudo for maximum detail? (y/n)</li>
-  <li>Open HTML report in browser? (y/n)</li>
-</ul>
+The tool will then ask only two questions:
 
-<h2>Expected Output Examples</h2>
+Run with admin/sudo for maximum detail? (y/n)
+Open HTML report in browser? (y/n)
 
-<h3>With Admin Rights (answer "y" to first question)</h3>
-<p>Full tree with accurate hops and realistic stability.</p>
+Expected Output Examples
+With Admin Rights (answer "y" to first question)
+Full tree with accurate hops and realistic stability.
 
-<div class="terminal">
-<pre>
 USB Diagnostic Tool – Windows priority 1
 ===========================================
 Run with admin/sudo for maximum detail? (y/n): y
 → Admin mode enabled
-
 Platform: Windows 11 Pro (x64)
 Host USB Max Tiers: 7 (spec) | Max external hubs: 4 (practical)
 Built-in hub: No
 Source: Full admin mode
-
 === USB TREE (from physical port) ===
 Root Hub (USB 3.2)
 ├── Intel USB 3.2 eXtensible Host Controller
 │ ├── Anker 7-port Hub (Port 1)
 │ │ ├── Logitech Webcam C920 (Port 2) ← 3 hops
 │ │ ├── Samsung T7 SSD (Port 3) ← 3 hops
-│ │ └── iPad Pro M4 USB-C (Port 4) ← 3 hops <span class="unstable">(orange for Mac)</span>
+│ │ └── iPad Pro M4 USB-C (Port 4) ← 3 hops (orange for Mac)
 │ ├── CalDigit TS4 Dock (Port 5) ← 2 hops
 │ │ ├── iPhone 16 Pro USB-C (Port 1) ← 3 hops
 │ │ └── Dell 27" Monitor (Port 2) ← 3 hops
 │ └── Belkin 10-port Hub (Port 6) ← 2 hops
 │ ├── Android Tablet (Samsung) (Port 3) ← 3 hops
 │ └── FURTHER HUB → Razer Mouse Dock (Port 4)
-│ ├── Razer Mouse (Port 1) ← 4 hops ← <span class="unstable">ORANGE</span>
-│ └── External HDD (Port 2) ← 4 hops ← <span class="unstable">ORANGE</span>
+│ ├── Razer Mouse (Port 1) ← 4 hops ← ORANGE
+│ └── External HDD (Port 2) ← 4 hops ← ORANGE
 └── FURTHER HUB → Orico 5-bay Hub (Port 7) ← 3 hops
-    └── FURTHER HUB → Cheap no-name 4-port (Port 1) ← 4 hops ← <span class="unstable">ORANGE</span>
-        └── iPhone 15 USB-C (Port 3) ← 5 hops ← <span class="not-stable">PINK</span>
-
+└── FURTHER HUB → Cheap no-name 4-port (Port 1) ← 4 hops ← ORANGE
+└── iPhone 15 USB-C (Port 3) ← 5 hops ← PINK
 Furthest jumps from host: 5
 Number of tiers: 6
 Number of external hubs: 5
 Total connected devices: 12
-
 === STABILITY PER PLATFORM (based on 5 hops) ===
-Windows:                  <span class="stable">Stable</span> (green – under 5 hops)
-Linux:                    <span class="stable">Stable</span> (green)
-Mac Intel:                <span class="unstable">Unstable</span> (orange – over 4 hops for Intel)
-Mac Apple Silicon:        <span class="not-stable">Not stable</span> (pink – far over 3 hops)
-iPad USB-C (M-series):    <span class="unstable">Unstable</span> (orange)
-iPhone USB-C:             <span class="stable">Stable</span> (green)
-Android Phone (Qualcomm): <span class="stable">Stable</span> (green)
-Android Tablet (Exynos):  <span class="unstable">Unstable</span> (orange)
-
+Windows:                  Stable (green – under 5 hops)
+Linux:                    Stable (green)
+Mac Intel:                Unstable (orange – over 4 hops for Intel)
+Mac Apple Silicon:        Not stable (pink – far over 3 hops)
+iPad USB-C (M-series):    Unstable (orange)
+iPhone USB-C:             Stable (green)
+Android Phone (Qualcomm): Stable (green)
+Android Tablet (Exynos):  Unstable (orange)
 === SUMMARY FOR THIS HOST ===
-Host status for this port: <span class="unstable">Unstable</span> (orange)
+Host status for this port: Unstable (orange)
 Recommended max for Windows: 4 hops / 3 external hubs
 Current: 5 hops / 5 external hubs → OVER LIMIT
-
 If unstable: Reduce number of tiers.
-
 Report saved as: usb-report-20250223-1007.txt
 Report saved as: usb-report-20250223-1007.html (opens automatically)
-</pre>
-</div>
 
-<h3>Without Admin Rights</h3>
-<p>Basic tree based on available information.</p>
+Without Admin Rights
+Basic tree based on available information.
 
-<div class="terminal">
-<pre>
 USB Tree Diagnostic Tool - Windows mode
 Platform: Windows 11 Home
-
 Running with admin: False
 Note: Tree is basic. For full detail, use Git Bash or Linux/macOS.
-
 === USB Tree (basic) ===
-- USB Root Hub (Ports 10) ← 0 hops
-  - Anker 7-port Hub ← 1 hop
-    - Logitech Webcam ← 2 hops
-    - Samsung T7 SSD ← 2 hops
-    - iPad Pro USB-C ← 2 hops
-  - CalDigit TS4 Dock ← 1 hop
-    - iPhone 16 Pro ← 2 hops
+
+USB Root Hub (Ports 10) ← 0 hops
+Anker 7-port Hub ← 1 hop
+Logitech Webcam ← 2 hops
+Samsung T7 SSD ← 2 hops
+iPad Pro USB-C ← 2 hops
+
+CalDigit TS4 Dock ← 1 hop
+iPhone 16 Pro ← 2 hops
+
+
 
 Furthest jumps: 2
 Number of tiers: 3
 Total devices: 6
-
 === Stability per platform (based on 2 hops) ===
-Windows                  <span class="stable">Stable</span>
-Linux                    <span class="stable">Stable</span>
-Mac Intel                <span class="stable">Stable</span>
-Mac Apple Silicon        <span class="stable">Stable</span>
-iPad USB-C (M-series)    <span class="stable">Stable</span>
-iPhone USB-C             <span class="stable">Stable</span>
-Android Phone (Qualcomm) <span class="stable">Stable</span>
-Android Tablet (Exynos)  <span class="stable">Stable</span>
-
+Windows                  Stable
+Linux                    Stable
+Mac Intel                Stable
+Mac Apple Silicon        Stable
+iPad USB-C (M-series)    Stable
+iPhone USB-C             Stable
+Android Phone (Qualcomm) Stable
+Android Tablet (Exynos)  Stable
 === Host summary ===
-Host status: <span class="stable">Stable</span>
+Host status: Stable
 Stability Score: 7/10
 If unstable: Reduce number of tiers.
-
-Report saved as C:\Users\...\usb-tree-report-20260223-1432.txt
+Report saved as C:\Users...\usb-tree-report-20260223-1432.txt
 Open HTML report in browser? (y/n)
-</pre>
-</div>
 
-<h2>Supported Platforms</h2>
+Supported Platforms
 
-<table>
-  <tr><th>Platform</th><th>Without admin</th><th>With admin/sudo</th><th>Detail Level</th></tr>
-  <tr><td>Windows (PowerShell)</td><td>Basic tree</td><td>Improved tree</td><td>Good</td></tr>
-  <tr><td>Linux</td><td>Full tree (lsusb -t)</td><td>Full + extra</td><td>Excellent</td></tr>
-  <tr><td>macOS</td><td>Full tree (system_profiler)</td><td>Full</td><td>Excellent</td></tr>
-  <tr><td>Windows + Git Bash</td><td>Full tree (via bash)</td><td>Full</td><td>Excellent</td></tr>
-</table>
 
-<p>Made to make USB troubleshooting easy for everyone – but detailed enough for professionals.</p>
 
-<p>Questions or improvements? <a href="https://github.com/klangche/usb-script/issues">Open an issue</a>.</p>
 
-<script>
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    alert('Command copied to clipboard!');
-  }).catch(err => {
-    alert('Failed to copy: ' + err);
-  });
-}
-</script>
 
-</body>
-</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PlatformWithout adminWith admin/sudoDetail LevelWindows (PowerShell)Basic treeImproved treeGoodLinuxFull tree (lsusb -t)Full + extraExcellentmacOSFull tree (system_profiler)FullExcellentWindows + Git BashFull tree (via bash)FullExcellent
+Made to make USB troubleshooting easy for everyone – but detailed enough for professionals.
+Questions or improvements? Open an issue!
