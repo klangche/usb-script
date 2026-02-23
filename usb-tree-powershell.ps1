@@ -1,5 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# Compatible with PowerShell 5.1 and 7+ – Host status limited by Mac Apple Silicon
+# Compatible with PowerShell 5.1 and 7+ – Host status capped by Mac Apple Silicon
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -104,7 +104,7 @@ if ($macAsStatus -eq "Not stable") {
     $hostStatus = "Potentially unstable"
     $hostColor = "#ffa500"
 } else {
-    # If Mac AS is Stable, use the worst from others
+    # If Mac AS is Stable, use worst from others
     $hasNotStable = $false
     $hasPotentially = $false
     foreach ($line in $statusLines) {
