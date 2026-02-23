@@ -1,5 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# With live monitoring via WMI events (requires admin)
+# Compatible with PowerShell 5.1 and 7+ – Host status strict (Stable only if all platforms Stable)
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -94,10 +94,21 @@ foreach ($line in $statusLines) {
     $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
 }
 
-$hostStatus = if ($numTiers -le 5) { "Stable" } 
-              elseif ($numTiers -le 7) { "Potentially unstable" } 
-              else { "Not stable" }
-$hostColor = if ($hostStatus -eq "Stable") { "#0f0" } elseif ($hostStatus -eq "Potentially unstable") { "#ffa500" } else { "#ff69b4" }
+# Strict host status: Stable ONLY if ALL platforms are Stable
+$hostStatus = "Stable"
+$hostColor = "#0f0"
+
+foreach ($line in $statusLines) {
+    if ($line.Status -eq "Potentially unstable" -and $hostStatus -eq "Stable") {
+        $hostStatus = "Potentially unstable"
+        $hostColor = "#ffa500"
+    }
+    if ($line.Status -eq "Not stable") {
+        $hostStatus = "Not stable"
+        $hostColor = "#ff69b4"
+        break
+    }
+}
 
 # Terminal output
 Write-Host "=== USB Tree (basic) ===" -ForegroundColor Cyan
@@ -134,39 +145,3 @@ $html | Out-File $outHtml
 Write-Host "Report saved as $outTxt"
 $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -match '^[yY]') { Start-Process $outHtml }
-
-# Long term LIVE test (requires admin)
-$testChoice = Read-Host "Run long term LIVE test (event monitoring, requires admin)? (y/n)"
-if ($testChoice -match '^[yY]') {
-    if (-not $isElevated) {
-        Write-Host "Live test requires admin rights. Skipping." -ForegroundColor Yellow
-    } else {
-        $minutes = Read-Host "For how many minutes?"
-        $endTime = (Get-Date).AddMinutes($minutes)
-
-        Write-Host "Starting LIVE USB monitoring for $minutes minutes..." -ForegroundColor Cyan
-        Write-Host "Listening for USB add/remove/re-enumeration events. Press Ctrl+C to stop early." -ForegroundColor Yellow
-
-        # Register WMI event watcher for USB changes
-        $query = "SELECT * FROM __InstanceOperationEvent WITHIN 1 WHERE TargetInstance ISA 'Win32_PnPEntity' AND TargetInstance.DeviceID LIKE 'USB%'"
-        $job = Register-WmiEvent -Query $query -SourceIdentifier "USBChange" -Action {
-            $event = $EventArgs.NewEvent
-            if ($event.__CLASS -eq "__InstanceCreationEvent") {
-                Write-Host "USB DEVICE ADDED/RE-ENUMERATED: $($event.TargetInstance.Name) at $(Get-Date -Format HH:mm:ss.fff)" -ForegroundColor Green
-            } elseif ($event.__CLASS -eq "__InstanceDeletionEvent") {
-                Write-Host "USB DEVICE REMOVED: $($event.TargetInstance.Name) at $(Get-Date -Format HH:mm:ss.fff)" -ForegroundColor Red
-            } elseif ($event.__CLASS -eq "__InstanceModificationEvent") {
-                Write-Host "USB DEVICE CHANGED (possible re-handshake): $($event.TargetInstance.Name) at $(Get-Date -Format HH:mm:ss.fff)" -ForegroundColor Yellow
-            }
-        }
-
-        try {
-            while ((Get-Date) -lt $endTime) {
-                Start-Sleep -Seconds 1
-            }
-        } finally {
-            Unregister-Event -SourceIdentifier "USBChange" -ErrorAction SilentlyContinue
-            Write-Host "Live monitoring complete." -ForegroundColor Cyan
-        }
-    }
-}
