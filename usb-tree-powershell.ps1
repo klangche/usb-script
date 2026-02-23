@@ -1,3 +1,4 @@
+
 # =============================================================================
 # USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition
 # =============================================================================
@@ -243,7 +244,7 @@ Write-Host ""
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
 # =============================================================================
-# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund, white-space: pre)
+# HTML REPORT - EXAKT SOM TERMINAL (med explicita radbrytningar)
 # =============================================================================
 $html = @"
 <!DOCTYPE html>
@@ -293,7 +294,7 @@ $(foreach ($line in $statusLines) {
              elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
              else { "magenta" }
     "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
-})
+}) -join "`n"
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
@@ -435,7 +436,7 @@ if ($isElevated) {
             Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
             Write-Host ""
             
-            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund, white-space: pre)
+            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (med explicita radbrytningar)
             $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
@@ -484,7 +485,7 @@ $(foreach ($line in $statusLines) {
              elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
              else { "magenta" }
     "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
-})
+}) -join "`n"
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
@@ -510,7 +511,7 @@ $(foreach ($event in (Get-Content $deepLog)) {
     } else {
         "  <span class='gray'>$event</span>"
     }
-})
+}) -join "`n"
 </pre>
 </body>
 </html>
