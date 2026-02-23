@@ -1,5 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# Compatible with PowerShell 5.1 and 7+ – Strict host status
+# Compatible with PowerShell 5.1 and 7+ – Host status limited by Mac Apple Silicon
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -94,24 +94,34 @@ foreach ($line in $statusLines) {
     $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
 }
 
-# Strict host status: Hierarchical check
-$hasNotStable = $false
-$hasPotentially = $false
+# Strict host status: Mac Apple Silicon is the bottleneck
+$macAsStatus = ($statusLines | Where-Object { $_.Platform -eq "Mac Apple Silicon" }).Status
 
-foreach ($line in $statusLines) {
-    if ($line.Status -eq "Not stable") { $hasNotStable = $true }
-    if ($line.Status -eq "Potentially unstable") { $hasPotentially = $true }
-}
-
-if ($hasNotStable) {
+if ($macAsStatus -eq "Not stable") {
     $hostStatus = "Not stable"
     $hostColor = "#ff69b4"
-} elseif ($hasPotentially) {
+} elseif ($macAsStatus -eq "Potentially unstable") {
     $hostStatus = "Potentially unstable"
     $hostColor = "#ffa500"
 } else {
-    $hostStatus = "Stable"
-    $hostColor = "#0f0"
+    # If Mac AS is Stable, use the worst from others
+    $hasNotStable = $false
+    $hasPotentially = $false
+    foreach ($line in $statusLines) {
+        if ($line.Platform -eq "Mac Apple Silicon") { continue }
+        if ($line.Status -eq "Not stable") { $hasNotStable = $true }
+        if ($line.Status -eq "Potentially unstable") { $hasPotentially = $true }
+    }
+    if ($hasNotStable) {
+        $hostStatus = "Not stable"
+        $hostColor = "#ff69b4"
+    } elseif ($hasPotentially) {
+        $hostStatus = "Potentially unstable"
+        $hostColor = "#ffa500"
+    } else {
+        $hostStatus = "Stable"
+        $hostColor = "#0f0"
+    }
 }
 
 # Terminal output
