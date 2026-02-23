@@ -14,13 +14,16 @@ A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess sta
 
 ## How to Run (one single line)
 
+Windows:
 ```powershell
 irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
 ```
+macOS / Linux / Git Bash:
 ```Terminal / Shell
 curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh | tr -d '\r' | bash
 ```
 Paste above command into **PowerShell** (Windows) or **Terminal** (macOS/Linux)
+
 
 <h1>USB Tree Diagnostic Tool</h1>
 
