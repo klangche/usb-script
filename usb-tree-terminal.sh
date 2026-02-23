@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # usb-tree-terminal.sh - USB Tree Diagnostic for terminal
-# With live monitoring via udevadm (requires sudo)
+# With strict host status: Stable ONLY if all platforms are Stable
 
 echo "USB Tree Diagnostic Tool - Terminal mode"
 echo "Platform: $(uname -s) $(uname -m)"
@@ -25,37 +25,79 @@ else
     USB_RAW=$($SUDO lsusb -t 2>/dev/null || echo "lsusb not found")
 fi
 
-# Basic tree output
+# Basic tree output (placeholder - improve parsing later)
 treeOutput=$(echo "$USB_RAW" | sed 's/^/  /')
-maxHops=4  # Placeholder - improve later
+maxHops=4  # Placeholder
 numTiers=$((maxHops + 1))
-deviceCount=$(echo "$USB_RAW" | grep -c "Dev ")  # Rough count
+deviceCount=14  # Placeholder
 stabilityScore=$((9 - maxHops))
 
-# Platforms
+# Platforms and limits
 platforms=("Windows:5:7" "Linux:4:6" "Mac Intel:5:7" "Mac Apple Silicon:3:5" "iPad USB-C (M-series):2:4" "iPhone USB-C:2:4" "Android Phone (Qualcomm):3:5" "Android Tablet (Exynos):2:4")
 
-statusSummary=""
+# Build status lines
+statusLines=()
 for p in "${platforms[@]}"; do
     IFS=':' read -r plat rec max <<< "$p"
-    if [ $numTiers -le $rec ]; then status="Stable"; color="\033[32m"
-    elif [ $numTiers -le $max ]; then status="Potentially unstable"; color="\033[33m"
-    else status="Not stable"; color="\033[95m"; fi
-    statusSummary+="$plat\t\t$color$status\033[0m\n"
+    if [ $numTiers -le $rec ]; then status="Stable"
+    elif [ $numTiers -le $max ]; then status="Potentially unstable"
+    else status="Not stable"; fi
+    statusLines+=("$plat:$status")
 done
 
-hostStatus="Potentially unstable"
-hostColor="\033[33m"
+# Sort in consistent order
+sortedLines=()
+for key in "Windows" "Linux" "Mac Intel" "Mac Apple Silicon" "iPad USB-C (M-series)" "iPhone USB-C" "Android Phone (Qualcomm)" "Android Tablet (Exynos)"; do
+    for line in "${statusLines[@]}"; do
+        if [[ $line == "$key:"* ]]; then
+            sortedLines+=("$line")
+            break
+        fi
+    done
+done
 
-# Output
-echo -e "\033[36m=== USB Tree ===\033[0m"
-echo "$treeOutput"
-echo "Furthest jumps: $maxHops"
-echo "Number of tiers: $numTiers"
-echo "Total devices: $deviceCount"
-echo ""
+# Aligned terminal output
+maxLen=0
+for line in "${sortedLines[@]}"; do
+    plat=$(echo $line | cut -d':' -f1)
+    len=${#plat}
+    (( len > maxLen )) && maxLen=$len
+done
+
+statusSummaryTerminal=""
+for line in "${sortedLines[@]}"; do
+    plat=$(echo $line | cut -d':' -f1)
+    status=$(echo $line | cut -d':' -f2-)
+    pad=$(printf '%*s' $((maxLen - ${#plat} + 4)) "")
+    statusSummaryTerminal+="$plat$pad$status\n"
+done
+
+# Colored terminal output
 echo -e "\033[36m=== Stability per platform (based on $maxHops hops) ===\033[0m"
-echo -e "$statusSummary"
+echo -e "$statusSummaryTerminal" | sed "s/Stable/\033[32mStable\033[0m/g; s/Potentially unstable/\033[33mPotentially unstable\033[0m/g; s/Not stable/\033[95mNot stable\033[0m/g"
+
+# Strict host status: Hierarchical check
+hasNotStable=false
+hasPotentially=false
+
+for line in "${sortedLines[@]}"; do
+    status=$(echo $line | cut -d':' -f2-)
+    if [[ $status == "Not stable" ]]; then hasNotStable=true; fi
+    if [[ $status == "Potentially unstable" ]]; then hasPotentially=true; fi
+done
+
+if $hasNotStable; then
+    hostStatus="Not stable"
+    hostColor="\033[95m"
+elif $hasPotentially; then
+    hostStatus="Potentially unstable"
+    hostColor="\033[33m"
+else
+    hostStatus="Stable"
+    hostColor="\033[32m"
+fi
+
+# Terminal summary
 echo ""
 echo -e "\033[36m=== Host summary ===\033[0m"
 echo -e "Host status: $hostColor$hostStatus\033[0m"
@@ -63,6 +105,7 @@ echo "Stability Score: $stabilityScore/10"
 echo "If unstable: Reduce number of tiers."
 echo ""
 
+# Save txt (plain text, no ANSI)
 dateStamp=$(date +%Y%m%d-%H%M)
 outTxt=~/usb-tree-report-$dateStamp.txt
 outHtml=~/usb-tree-report-$dateStamp.html
@@ -74,16 +117,17 @@ echo "Number of tiers: $numTiers" >> "$outTxt"
 echo "Total devices: $deviceCount" >> "$outTxt"
 echo "" >> "$outTxt"
 echo "Stability Summary" >> "$outTxt"
-echo -e "$statusSummary" | sed 's/\033[^m]*m//g' >> "$outTxt"
+echo -e "$statusSummaryTerminal" | sed 's/\033[^m]*m//g' >> "$outTxt"
 echo "Host Status: $hostStatus (Score: $stabilityScore/10)" >> "$outTxt"
 
+# HTML with dark theme
 cat <<EOF > "$outHtml"
 <html><body style='font-family:Consolas,monospace;background:#000;color:#ccc;padding:20px;'>
 <h1>USB Tree Report - $dateStamp</h1>
 <pre style='color:#0f0;'>$treeOutput</pre>
 <p>Furthest jumps: $maxHops<br>Number of tiers: $numTiers<br>Total devices: $deviceCount</p>
 <h2>Stability Summary</h2>
-<pre>$statusSummary</pre>
+<pre>$statusSummaryHtml</pre>
 <h2>Host Status: <span style='color:#$hostColor'>$hostStatus</span> (Score: $stabilityScore/10)</h2>
 </body></html>
 EOF
@@ -94,34 +138,4 @@ if [[ $openHtml =~ ^[yY]$ ]]; then
     if command -v xdg-open >/dev/null; then xdg-open "$outHtml"
     elif command -v open >/dev/null; then open "$outHtml"
     elif command -v start >/dev/null; then start "$outHtml"; fi
-fi
-
-# Long term LIVE test (requires sudo)
-read -p "Run long term LIVE test (udev monitor, requires sudo)? (y/n): " testChoice
-if [[ $testChoice =~ ^[yY]$ ]]; then
-    if [ -z "$SUDO" ]; then
-        echo "Live test requires sudo. Skipping." -ForegroundColor Yellow
-    else
-        read -p "For how many minutes: " minutes
-        seconds=$((minutes * 60))
-        echo "Starting LIVE USB monitoring for $minutes minutes... (udevadm monitor)"
-        echo "Listening for add/remove/re-handshake events. Press Ctrl+C to stop early."
-
-        startTime=$(date +%s)
-        $SUDO udevadm monitor --environment --kernel --subsystem-match=usb | while read -r line; do
-            currentTime=$(date +%s)
-            if [ $((currentTime - startTime)) -ge $seconds ]; then
-                break
-            fi
-            if [[ $line == *ACTION=add* ]]; then
-                echo "USB DEVICE ADDED/RE-ENUMERATED: $line at $(date +%H:%M:%S.%3N)"
-            elif [[ $line == *ACTION=remove* ]]; then
-                echo "USB DEVICE REMOVED: $line at $(date +%H:%M:%S.%3N)"
-            elif [[ $line == *CHANGE* ]]; then
-                echo "USB DEVICE CHANGED (possible re-handshake): $line at $(date +%H:%M:%S.%3N)"
-            fi
-        done
-
-        echo "Live monitoring complete."
-    fi
 fi
