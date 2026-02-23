@@ -1,3 +1,8 @@
+```powershell
+irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
+```
+Paste above command into **PowerShell** (Windows) or **Terminal** (macOS/Linux)
+
 # USB Tree Diagnostic Tool
 
 A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.
@@ -8,11 +13,6 @@ A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess sta
 
 ## How to Run (one single line)
 
-Paste this command into **PowerShell** (Windows) or **Terminal** (macOS/Linux):
-
-```powershell
-irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
-```
 
 
 <h1>USB Tree Diagnostic Tool</h1>
