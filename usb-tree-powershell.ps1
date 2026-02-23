@@ -231,7 +231,7 @@ Write-Host ""
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
 # =============================================================================
-# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund)
+# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund, inga extra radbryt)
 # =============================================================================
 $html = @"
 <!DOCTYPE html>
@@ -258,11 +258,6 @@ $html = @"
         .magenta { color: #ff00ff; }
         .white { color: #ffffff; }
         .gray { color: #c0c0c0; }
-        .platform-line {
-            display: block;
-            white-space: pre;
-            margin: 2px 0;
-        }
     </style>
 </head>
 <body>
@@ -284,13 +279,13 @@ $(foreach ($line in $statusLines) {
     $color = if ($line.Status -eq "STABLE") { "green" } 
              elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
              else { "magenta" }
-    "<span class='platform-line'>  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span></span>"
-})
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
+}) -join "`n"
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
-<span class="platform-line">  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span></span>
-<span class="platform-line">  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span></span>
+  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
 </pre>
 </body>
 </html>
@@ -430,7 +425,7 @@ if ($isElevated) {
             Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
             Write-Host ""
             
-            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund)
+            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund, inga extra radbryt)
             $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
@@ -456,16 +451,6 @@ if ($isElevated) {
         .magenta { color: #ff00ff; }
         .white { color: #ffffff; }
         .gray { color: #c0c0c0; }
-        .platform-line {
-            display: block;
-            white-space: pre;
-            margin: 2px 0;
-        }
-        .event-line {
-            display: block;
-            white-space: pre;
-            margin: 1px 0;
-        }
     </style>
 </head>
 <body>
@@ -487,34 +472,34 @@ $(foreach ($line in $statusLines) {
     $color = if ($line.Status -eq "STABLE") { "green" } 
              elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
              else { "magenta" }
-    "<span class='platform-line'>  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span></span>"
-})
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
+}) -join "`n"
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
-<span class="platform-line">  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span></span>
-<span class="platform-line">  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span></span>
+  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal)) elapsed</span>
 <span class="cyan">==============================================================================</span>
 
-<span class="platform-line">  <span class='gray'>Final status:     </span><span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span></span>
-<span class="platform-line">  <span class='gray'>Random errors:    </span><span class="$(if ($script:RandomErrors -gt 0) { 'yellow' } else { 'gray' })">$script:RandomErrors</span></span>
-<span class="platform-line">  <span class='gray'>Re-handshakes:    </span><span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span></span>
+  <span class='gray'>Final status:     </span><span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
+  <span class='gray'>Random errors:    </span><span class="$(if ($script:RandomErrors -gt 0) { 'yellow' } else { 'gray' })">$script:RandomErrors</span>
+  <span class='gray'>Re-handshakes:    </span><span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">EVENT LOG (in chronological order)</span>
 <span class="cyan">==============================================================================</span>
 $(foreach ($event in (Get-Content $deepLog)) {
     if ($event -match "ERROR") {
-        "<span class='event-line'>  <span class='magenta'>$event</span></span>"
+        "  <span class='magenta'>$event</span>"
     } elseif ($event -match "REHANDSHAKE") {
-        "<span class='event-line'>  <span class='yellow'>$event</span></span>"
+        "  <span class='yellow'>$event</span>"
     } else {
-        "<span class='event-line'>  <span class='gray'>$event</span></span>"
+        "  <span class='gray'>$event</span>"
     }
-})
+}) -join "`n"
 </pre>
 </body>
 </html>
