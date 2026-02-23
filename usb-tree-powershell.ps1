@@ -8,7 +8,7 @@
 # - Smart admin detection (doesn't ask twice)
 # - Tree view with proper hierarchy
 # - Stability assessment per platform
-# - HTML report (exact PowerShell colors)
+# - HTML report (exact terminal look - black background)
 # - Optional Deep Analytics (clean terminal view)
 # =============================================================================
 
@@ -230,8 +230,199 @@ Write-Host ""
 "USB TREE REPORT - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nSTABILITY SUMMARY`n$statusSummaryTerminal`nHOST STATUS: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
-# HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund)
-$deepHtmlContent = @"
+# =============================================================================
+# HTML REPORT - EXAKT SOM TERMINAL (svart bakgrund)
+# =============================================================================
+$html = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>USB Tree Report</title>
+    <style>
+        body { 
+            background: #000000; 
+            color: #e0e0e0; 
+            font-family: 'Consolas', 'Courier New', monospace; 
+            padding: 20px;
+            font-size: 14px;
+        }
+        pre { 
+            margin: 0; 
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #e0e0e0;
+            white-space: pre-wrap;
+        }
+        .cyan { color: #00ffff; }
+        .green { color: #00ff00; }
+        .yellow { color: #ffff00; }
+        .magenta { color: #ff00ff; }
+        .white { color: #ffffff; }
+        .gray { color: #c0c0c0; }
+    </style>
+</head>
+<body>
+<pre>
+<span class="cyan">==============================================================================</span>
+<span class="cyan">USB TREE REPORT - $dateStamp</span>
+<span class="cyan">==============================================================================</span>
+
+$treeOutput
+
+<span class="gray">Furthest jumps: $maxHops</span>
+<span class="gray">Number of tiers: $numTiers</span>
+<span class="gray">Total devices: $deviceCount</span>
+
+<span class="cyan">==============================================================================</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($line in $statusLines) {
+    $color = if ($line.Status -eq "STABLE") { "green" } 
+             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
+             else { "magenta" }
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
+})
+<span class="cyan">==============================================================================</span>
+<span class="cyan">HOST SUMMARY</span>
+<span class="cyan">==============================================================================</span>
+  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
+</pre>
+</body>
+</html>
+"@
+$html | Out-File $outHtml
+
+$open = Read-Host "Open HTML report in browser? (y/n)"
+if ($open -eq 'y') { Start-Process $outHtml }
+
+# =============================================================================
+# DEEP ANALYTICS - Clean terminal view
+# =============================================================================
+if ($isElevated) {
+    Write-Host ""
+    $runDeep = Read-Host "Run Deep Analytics to monitor USB stability? (y/n)"
+    
+    if ($runDeep -eq 'y') {
+        Write-Host ""
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host "DEEP ANALYTICS - USB Event Monitoring" -ForegroundColor Magenta
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host "Monitoring USB connections... Press Ctrl+C to stop" -ForegroundColor Gray
+        Write-Host ""
+        
+        # Simple counters
+        $script:RandomErrors = 0
+        $script:Rehandshakes = 0
+        $script:IsStable = $true
+        $script:StartTime = Get-Date
+        $deepLog = "$env:TEMP\usb-deep-analytics-$dateStamp.log"
+        $deepHtml = "$env:TEMP\usb-deep-analytics-$dateStamp.html"
+        
+        # Store initial connected devices
+        $initialDevices = @{}
+        foreach ($dev in $devices) {
+            $initialDevices[$dev.InstanceId] = $dev.Name
+        }
+        
+        # Simple logging function
+        function Write-Event {
+            param($Type, $Message, $Device)
+            $time = Get-Date -Format "HH:mm:ss.fff"
+            $logLine = "[$time] [$Type] $Message $Device"
+            Add-Content -Path $deepLog -Value $logLine
+        }
+        
+        Write-Event -Type "INFO" -Message "Deep Analytics started" -Device ""
+        
+        # Simple monitoring loop
+        try {
+            $previousDevices = $initialDevices.Clone()
+            
+            while ($true) {
+                $elapsed = (Get-Date) - $script:StartTime
+                
+                # Get current devices
+                $current = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' }
+                $currentMap = @{}
+                foreach ($dev in $current) { 
+                    if ($dev.FriendlyName) {
+                        $currentMap[$dev.InstanceId] = $dev.FriendlyName
+                    } else {
+                        $currentMap[$dev.InstanceId] = $dev.InstanceId
+                    }
+                }
+                
+                # Check for disconnections (re-handshakes)
+                foreach ($id in $previousDevices.Keys) {
+                    if (-not $currentMap.ContainsKey($id)) {
+                        Write-Event -Type "REHANDSHAKE" -Message "Device disconnected" -Device $previousDevices[$id]
+                    }
+                }
+                
+                # Check for new connections
+                foreach ($id in $currentMap.Keys) {
+                    if (-not $previousDevices.ContainsKey($id)) {
+                        Write-Event -Type "INFO" -Message "Device connected" -Device $currentMap[$id]
+                    }
+                }
+                
+                $previousDevices = $currentMap.Clone()
+                
+                # Clear and update display (clean view)
+                Clear-Host
+                $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+                $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
+                
+                Write-Host "==============================================================================" -ForegroundColor Magenta
+                Write-Host "DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsed)) elapsed" -ForegroundColor Magenta
+                Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+                Write-Host "==============================================================================" -ForegroundColor Magenta
+                Write-Host ""
+                Write-Host "STATUS: " -NoNewline
+                Write-Host "$statusText" -ForegroundColor $statusColor
+                Write-Host ""
+                Write-Host "RANDOM ERRORS: " -NoNewline
+                Write-Host "$($script:RandomErrors.ToString('D2'))" -ForegroundColor $(if ($script:RandomErrors -gt 0) { "Yellow" } else { "Gray" })
+                Write-Host "RE-HANDSHAKES: " -NoNewline
+                Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+                Write-Host ""
+                Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
+                
+                # Show last 10 events
+                $events = Get-Content $deepLog | Where-Object { $_ -notmatch "Device detected" } | Select-Object -Last 10
+                if ($events.Count -eq 0) {
+                    Write-Host "  No events detected" -ForegroundColor Gray
+                } else {
+                    foreach ($event in $events) {
+                        if ($event -match "ERROR") {
+                            Write-Host "  $event" -ForegroundColor Magenta
+                        } elseif ($event -match "REHANDSHAKE") {
+                            Write-Host "  $event" -ForegroundColor Yellow
+                        } else {
+                            Write-Host "  $event" -ForegroundColor Gray
+                        }
+                    }
+                }
+                
+                Start-Sleep -Seconds 1
+            }
+        }
+        finally {
+            $elapsedTotal = (Get-Date) - $script:StartTime
+            
+            Write-Host ""
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host "DEEP ANALYTICS COMPLETE" -ForegroundColor Magenta
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
+            Write-Host "Final status: " -NoNewline
+            Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
+            Write-Host "Random errors: $script:RandomErrors" -ForegroundColor Gray
+            Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
+            Write-Host ""
+            
+            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (svart bakgrund)
+            $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
@@ -256,17 +447,6 @@ $deepHtmlContent = @"
         .magenta { color: #ff00ff; }
         .white { color: #ffffff; }
         .gray { color: #c0c0c0; }
-        .platform-line { 
-            display: block; 
-            margin: 2px 0;
-            white-space: pre;
-        }
-        .event-line {
-            display: block;
-            margin: 1px 0;
-            white-space: pre;
-            font-family: 'Consolas', 'Courier New', monospace;
-        }
     </style>
 </head>
 <body>
@@ -288,39 +468,39 @@ $(foreach ($line in $statusLines) {
     $color = if ($line.Status -eq "STABLE") { "green" } 
              elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
              else { "magenta" }
-    "<span class='platform-line'>  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span></span>"
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
 })
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
-<span class="platform-line">  <span class='gray'>Host status:      </span><span class="$($hostColor.ToLower())">$hostStatus</span></span>
-<span class="platform-line">  <span class='gray'>Stability Score:  </span><span class="gray">$stabilityScore/10</span></span>
+  <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal)) elapsed</span>
 <span class="cyan">==============================================================================</span>
 
-<span class="platform-line">  <span class='gray'>Final status:     </span><span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span></span>
-<span class="platform-line">  <span class='gray'>Random errors:    </span><span class="$(if ($script:RandomErrors -gt 0) { 'yellow' } else { 'gray' })">$script:RandomErrors</span></span>
-<span class="platform-line">  <span class='gray'>Re-handshakes:    </span><span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span></span>
+  <span class='gray'>Final status:     </span><span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
+  <span class='gray'>Random errors:    </span><span class="$(if ($script:RandomErrors -gt 0) { 'yellow' } else { 'gray' })">$script:RandomErrors</span>
+  <span class='gray'>Re-handshakes:    </span><span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">EVENT LOG (in chronological order)</span>
 <span class="cyan">==============================================================================</span>
 $(foreach ($event in (Get-Content $deepLog)) {
     if ($event -match "ERROR") {
-        "<span class='event-line'>  <span class='magenta'>$event</span></span>"
+        "  <span class='magenta'>$event</span>"
     } elseif ($event -match "REHANDSHAKE") {
-        "<span class='event-line'>  <span class='yellow'>$event</span></span>"
+        "  <span class='yellow'>$event</span>"
     } else {
-        "<span class='event-line'>  <span class='gray'>$event</span></span>"
+        "  <span class='gray'>$event</span>"
     }
 })
 </pre>
 </body>
 </html>
 "@
-$deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
+            $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
             
             Write-Host "Log file: $deepLog" -ForegroundColor Gray
             Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
@@ -333,4 +513,3 @@ $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
         Write-Host "Deep Analytics skipped." -ForegroundColor Gray
     }
 }
-
