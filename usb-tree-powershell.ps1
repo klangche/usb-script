@@ -5,11 +5,11 @@
 # It assesses stability based on USB hops and platform limits
 #
 # FEATURES:
-# - Admin mode for maximum detail
+# - Smart admin detection (doesn't ask twice)
 # - Tree view with proper hierarchy
 # - Stability assessment per platform
 # - Basic HTML report (terminal style)
-# - Simple Deep Analytics (real-time monitoring)
+# - Optional Deep Analytics (asks before starting)
 # =============================================================================
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -19,13 +19,14 @@ Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" 
 Write-Host ""
 
 # =============================================================================
-# ADMIN HANDLING
+# SMART ADMIN HANDLING - Only asks once
 # =============================================================================
-$adminChoice = Read-Host "Run with admin for maximum detail? (y/n)"
 $isElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if ($adminChoice -eq 'y') {
-    if (-not $isElevated) {
+if (-not $isElevated) {
+    $adminChoice = Read-Host "Run with admin for maximum detail? (y/n)"
+    
+    if ($adminChoice -eq 'y') {
         Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
         
         $scriptPath = $MyInvocation.MyCommand.Path
@@ -41,10 +42,10 @@ if ($adminChoice -eq 'y') {
         Start-Sleep -Seconds 2
         exit
     } else {
-        Write-Host "✓ Already running as administrator." -ForegroundColor Green
+        Write-Host "Running without admin privileges (basic mode)." -ForegroundColor Yellow
     }
 } else {
-    Write-Host "Running without admin privileges (basic mode)." -ForegroundColor Yellow
+    Write-Host "✓ Running with administrator privileges." -ForegroundColor Green
 }
 Write-Host ""
 
@@ -276,101 +277,132 @@ $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -eq 'y') { Start-Process $outHtml }
 
 # =============================================================================
-# DEEP ANALYTICS - Simple Version
+# DEEP ANALYTICS - Only runs if user wants it
 # =============================================================================
 if ($isElevated) {
     Write-Host ""
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "DEEP ANALYTICS - USB Monitoring" -ForegroundColor Magenta
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "Monitoring USB connections... Press Ctrl+C to stop" -ForegroundColor Gray
-    Write-Host ""
+    $runDeep = Read-Host "Run Deep Analytics to monitor USB stability? (y/n)"
     
-    # Simple counters
-    $script:RandomErrors = 0
-    $script:Rehandshakes = 0
-    $script:IsStable = $true
-    $script:StartTime = Get-Date
-    $deepLog = "$env:TEMP\usb-deep-analytics-$dateStamp.log"
-    $deepHtml = "$env:TEMP\usb-deep-analytics-$dateStamp.html"
-    
-    # Simple logging
-    function Write-Event {
-        param($Type, $Message)
-        $time = Get-Date -Format "HH:mm:ss.fff"
-        $logLine = "[$time] [$Type] $Message"
-        Add-Content -Path $deepLog -Value $logLine
-        Write-Host "  $logLine" -ForegroundColor $(if ($Type -eq "ERROR") { "Magenta" } elseif ($Type -eq "REHANDSHAKE") { "Yellow" } else { "Gray" })
+    if ($runDeep -eq 'y') {
+        Write-Host ""
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host "DEEP ANALYTICS - USB Event Monitoring" -ForegroundColor Magenta
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host "Monitoring USB connections... Press Ctrl+C to stop" -ForegroundColor Gray
+        Write-Host "Only shows devices that disconnect/reconnect or have issues" -ForegroundColor Gray
+        Write-Host ""
         
-        if ($Type -eq "ERROR") { $script:RandomErrors++; $script:IsStable = $false }
-        if ($Type -eq "REHANDSHAKE") { $script:Rehandshakes++; $script:IsStable = $false }
-    }
-    
-    Write-Event -Type "INFO" -Message "Deep Analytics started"
-    
-    # Simple monitoring loop (check every second)
-    try {
-        $previousDevices = @{}
-        while ($true) {
-            $elapsed = (Get-Date) - $script:StartTime
-            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
-            $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
-            
-            # Get current devices
-            $current = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' }
-            $currentMap = @{}
-            foreach ($dev in $current) { $currentMap[$dev.InstanceId] = $dev.FriendlyName }
-            
-            # Check for changes
-            foreach ($id in $previousDevices.Keys) {
-                if (-not $currentMap.ContainsKey($id)) {
-                    Write-Event -Type "REHANDSHAKE" -Message "Device disconnected: $($previousDevices[$id])"
-                }
-            }
-            foreach ($id in $currentMap.Keys) {
-                if (-not $previousDevices.ContainsKey($id)) {
-                    Write-Event -Type "INFO" -Message "Device connected: $($currentMap[$id])"
-                }
-            }
-            
-            $previousDevices = $currentMap
-            
-            # Display status
-            Clear-Host
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsed)) elapsed" -ForegroundColor Magenta
-            Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host ""
-            Write-Host "STATUS: " -NoNewline
-            Write-Host "$statusText" -ForegroundColor $statusColor
-            Write-Host ""
-            Write-Host "RANDOM ERRORS: " -NoNewline
-            Write-Host "$($script:RandomErrors.ToString('D2'))" -ForegroundColor $(if ($script:RandomErrors -gt 0) { "Yellow" } else { "Gray" })
-            Write-Host "RE-HANDSHAKES: " -NoNewline
-            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
-            Write-Host ""
-            Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
-            
-            $events = Get-Content $deepLog -Tail 5
-            foreach ($event in $events) {
-                if ($event -match "ERROR") {
-                    Write-Host "  $event" -ForegroundColor Magenta
-                } elseif ($event -match "REHANDSHAKE") {
-                    Write-Host "  $event" -ForegroundColor Yellow
-                } else {
-                    Write-Host "  $event" -ForegroundColor Gray
-                }
-            }
-            
-            Start-Sleep -Seconds 1
+        # Simple counters
+        $script:RandomErrors = 0
+        $script:Rehandshakes = 0
+        $script:IsStable = $true
+        $script:StartTime = Get-Date
+        $deepLog = "$env:TEMP\usb-deep-analytics-$dateStamp.log"
+        $deepHtml = "$env:TEMP\usb-deep-analytics-$dateStamp.html"
+        
+        # Store initial connected devices
+        $initialDevices = @{}
+        foreach ($dev in $devices) {
+            $initialDevices[$dev.InstanceId] = $dev.Name
         }
-    }
-    finally {
-        $elapsedTotal = (Get-Date) - $script:StartTime
         
-        # BASIC HTML REPORT for Deep Analytics
-        $deepHtmlContent = @"
+        # Simple logging function
+        function Write-Event {
+            param($Type, $Message, $Device)
+            $time = Get-Date -Format "HH:mm:ss.fff"
+            $logLine = "[$time] [$Type] $Message $Device"
+            Add-Content -Path $deepLog -Value $logLine
+            
+            # Only show in terminal if it's an event (not initial connected devices)
+            if ($Type -ne "INFO" -or $Message -ne "Device detected") {
+                $color = if ($Type -eq "ERROR") { "Magenta" } elseif ($Type -eq "REHANDSHAKE") { "Yellow" } else { "Gray" }
+                Write-Host "  $logLine" -ForegroundColor $color
+            }
+            
+            if ($Type -eq "ERROR") { $script:RandomErrors++; $script:IsStable = $false }
+            if ($Type -eq "REHANDSHAKE") { $script:Rehandshakes++; $script:IsStable = $false }
+        }
+        
+        Write-Event -Type "INFO" -Message "Deep Analytics started" -Device ""
+        
+        # Simple monitoring loop
+        try {
+            $previousDevices = $initialDevices.Clone()
+            $events = @()
+            
+            while ($true) {
+                $elapsed = (Get-Date) - $script:StartTime
+                $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+                $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
+                
+                # Get current devices
+                $current = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' }
+                $currentMap = @{}
+                foreach ($dev in $current) { 
+                    if ($dev.FriendlyName) {
+                        $currentMap[$dev.InstanceId] = $dev.FriendlyName
+                    } else {
+                        $currentMap[$dev.InstanceId] = $dev.InstanceId
+                    }
+                }
+                
+                # Check for disconnections (re-handshakes)
+                foreach ($id in $previousDevices.Keys) {
+                    if (-not $currentMap.ContainsKey($id)) {
+                        Write-Event -Type "REHANDSHAKE" -Message "Device disconnected" -Device $previousDevices[$id]
+                    }
+                }
+                
+                # Check for new connections
+                foreach ($id in $currentMap.Keys) {
+                    if (-not $previousDevices.ContainsKey($id)) {
+                        Write-Event -Type "INFO" -Message "Device connected" -Device $currentMap[$id]
+                    }
+                }
+                
+                $previousDevices = $currentMap.Clone()
+                
+                # Display status (only shows events, not current devices)
+                Clear-Host
+                Write-Host "==============================================================================" -ForegroundColor Magenta
+                Write-Host "DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsed)) elapsed" -ForegroundColor Magenta
+                Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+                Write-Host "==============================================================================" -ForegroundColor Magenta
+                Write-Host ""
+                Write-Host "STATUS: " -NoNewline
+                Write-Host "$statusText" -ForegroundColor $statusColor
+                Write-Host ""
+                Write-Host "RANDOM ERRORS: " -NoNewline
+                Write-Host "$($script:RandomErrors.ToString('D2'))" -ForegroundColor $(if ($script:RandomErrors -gt 0) { "Yellow" } else { "Gray" })
+                Write-Host "RE-HANDSHAKES: " -NoNewline
+                Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+                Write-Host ""
+                Write-Host "EVENTS (only shows changes/issues):" -ForegroundColor Cyan
+                
+                # Show last 10 events from log (excluding initial detection)
+                $events = Get-Content $deepLog | Where-Object { $_ -notmatch "Device detected" } | Select-Object -Last 10
+                if ($events.Count -eq 0) {
+                    Write-Host "  No events detected" -ForegroundColor Gray
+                } else {
+                    foreach ($event in $events) {
+                        if ($event -match "ERROR") {
+                            Write-Host "  $event" -ForegroundColor Magenta
+                        } elseif ($event -match "REHANDSHAKE") {
+                            Write-Host "  $event" -ForegroundColor Yellow
+                        } else {
+                            Write-Host "  $event" -ForegroundColor Gray
+                        }
+                    }
+                }
+                
+                Start-Sleep -Seconds 1
+            }
+        }
+        finally {
+            $elapsedTotal = (Get-Date) - $script:StartTime
+            
+            # BASIC HTML REPORT for Deep Analytics - Events in order
+            $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
@@ -381,6 +413,7 @@ if ($isElevated) {
         .stable { color: #0f0; }
         .warning { color: #ffa500; }
         .critical { color: #ff69b4; }
+        .event { margin: 2px 0; }
     </style>
 </head>
 <body>
@@ -396,29 +429,32 @@ Random errors: $script:RandomErrors
 Re-handshakes: $script:Rehandshakes
 
 ==============================================================================
-COMPLETE EVENT LOG
+EVENT LOG (in chronological order)
 ==============================================================================
 $(Get-Content $deepLog | ForEach-Object { $_ })
 </pre>
 </body>
 </html>
 "@
-        $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
-        
-        Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "DEEP ANALYTICS COMPLETE" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))"
-        Write-Host "Final status: " -NoNewline
-        Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
-        Write-Host "Random errors: $script:RandomErrors"
-        Write-Host "Re-handshakes: $script:Rehandshakes"
-        Write-Host ""
-        Write-Host "Log file: $deepLog"
-        Write-Host "HTML report: $deepHtml"
-        
-        $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
-        if ($openDeep -eq 'y') { Start-Process $deepHtml }
+            $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
+            
+            Write-Host ""
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host "DEEP ANALYTICS COMPLETE" -ForegroundColor Magenta
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))"
+            Write-Host "Final status: " -NoNewline
+            Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
+            Write-Host "Random errors: $script:RandomErrors"
+            Write-Host "Re-handshakes: $script:Rehandshakes"
+            Write-Host ""
+            Write-Host "Log file: $deepLog"
+            Write-Host "HTML report: $deepHtml"
+            
+            $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
+            if ($openDeep -eq 'y') { Start-Process $deepHtml }
+        }
+    } else {
+        Write-Host "Deep Analytics skipped." -ForegroundColor Gray
     }
 }
