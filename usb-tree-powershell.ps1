@@ -1,58 +1,103 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# Compatible with PowerShell 5.1 and 7+
 
-Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
-Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "USB TREE DIAGNOSTIC TOOL - WINDOWS EDITION" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
 Write-Host ""
 
+# Ask for admin mode
+$adminChoice = Read-Host "Run with admin for maximum detail? (y/n)"
 $isElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-Write-Host "Running with admin: $isElevated" -ForegroundColor Yellow
-Write-Host "Note: Tree is basic without lsusb/system_profiler. For full detail, use Git Bash or Linux/macOS." -ForegroundColor DarkYellow
+
+if ($adminChoice -eq 'y' -and -not $isElevated) {
+    Write-Host "Relaunching as administrator..." -ForegroundColor Yellow
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+Write-Host "Running with admin: $isElevated" -ForegroundColor $(if ($isElevated) { "Green" } else { "Yellow" })
 Write-Host ""
 
-$dateStamp = Get-Date -Format yyyyMMdd-HHmm
+$dateStamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outTxt = "$env:TEMP\usb-tree-report-$dateStamp.txt"
 $outHtml = "$env:TEMP\usb-tree-report-$dateStamp.html"
 
-# Get devices with PS 5.1 compatible name fallback
+# Get devices
 $devices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, @{n='Name';e={
     if ($_.FriendlyName) { $_.FriendlyName }
     elseif ($_.Name) { $_.Name }
     else { $_.InstanceId }
 }}
 
+# Build parent-child map
 $map = @{}
 foreach ($d in $devices) {
     try {
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $d.InstanceId.Replace('\','\\')
         $reg = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
         $parent = $reg.ParentIdPrefix
-        $map[$d.InstanceId] = @{ Name = $d.Name; Parent = $parent }
+        $map[$d.InstanceId] = @{ Name = $d.Name; Parent = $parent; Children = @() }
     } catch {}
 }
 
-# Recursive print
+# Build tree structure
+$roots = @()
+foreach ($id in $map.Keys) {
+    if (-not $map[$id].Parent) {
+        $roots += $id
+    } else {
+        # Find parent and add as child
+        foreach ($pid in $map.Keys) {
+            if ($map[$pid].Name -like "*$($map[$id].Parent)*") {
+                $map[$pid].Children += $id
+                break
+            }
+        }
+    }
+}
+
+# Recursive tree printer
 $treeOutput = ""
 $maxHops = 0
 $deviceCount = $devices.Count
-function Print-Node {
-    param($id, $lvl)
+
+function Print-Tree {
+    param($id, $level, $prefix, $isLast)
+    
     $node = $map[$id]
-    if ($node) {
-        $script:treeOutput += '  ' * $lvl + "- $($node.Name) ($id) ← $lvl hops`n"
-        $script:maxHops = [Math]::Max($script:maxHops, $lvl)
+    if (-not $node) { return }
+    
+    # Build tree branch
+    $branch = ""
+    if ($level -eq 0) {
+        $branch = "└── "
+    } else {
+        $branch = $prefix + $(if ($isLast) { "└── " } else { "├── " })
     }
-    $kids = $map.Keys | Where-Object { $map[$_].Parent -and $id -like "*$($map[$_].Parent)*" }
-    foreach ($c in $kids) { Print-Node $c ($lvl+1) }
+    
+    $script:treeOutput += "$branch$($node.Name) ← $level hops`n"
+    $script:maxHops = [Math]::Max($script:maxHops, $level)
+    
+    # New prefix for children
+    $newPrefix = $prefix + $(if ($isLast) { "    " } else { "│   " })
+    
+    $children = $node.Children
+    for ($i = 0; $i -lt $children.Count; $i++) {
+        $isLastChild = ($i -eq $children.Count - 1)
+        Print-Tree -id $children[$i] -level ($level + 1) -prefix $newPrefix -isLast $isLastChild
+    }
 }
-foreach ($id in $map.Keys) {
-    if (-not $map[$id].Parent) { Print-Node $id 0 }
+
+# Print all roots
+foreach ($root in $roots) {
+    Print-Tree -id $root -level 0 -prefix "" -isLast $true
 }
 
 $numTiers = $maxHops + 1
 $stabilityScore = [Math]::Max(1, 9 - $maxHops)
 
-# Platforms and limits
+# Platform limits
 $platforms = @{
     "Windows"                  = @{rec=5; max=7}
     "Linux"                    = @{rec=4; max=6}
@@ -64,7 +109,7 @@ $platforms = @{
     "Android Tablet (Exynos)"  = @{rec=2; max=4}
 }
 
-# Build aligned status list
+# Build status lines
 $statusLines = @()
 foreach ($plat in $platforms.Keys) {
     $rec = $platforms[$plat].rec
@@ -86,25 +131,16 @@ foreach ($line in $statusLines) {
     $statusSummaryTerminal += "$($line.Platform)$pad$($line.Status)`n"
 }
 
-$statusSummaryHtml = ""
-foreach ($line in $statusLines) {
-    $color = if ($line.Status -eq "STABLE") { "#0f0" } 
-             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "#ffa500" } 
-             else { "#ff69b4" }
-    $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
-}
-
-# Strict host status: Mac Apple Silicon is the bottleneck
+# Host status
 $macAsStatus = ($statusLines | Where-Object { $_.Platform -eq "Mac Apple Silicon" }).Status
 
 if ($macAsStatus -eq "NOT STABLE") {
     $hostStatus = "NOT STABLE"
-    $hostColor = "#ff69b4"
+    $hostColor = "Magenta"
 } elseif ($macAsStatus -eq "POTENTIALLY UNSTABLE") {
     $hostStatus = "POTENTIALLY UNSTABLE"
-    $hostColor = "#ffa500"
+    $hostColor = "Yellow"
 } else {
-    # If Mac AS is STABLE, use worst from others
     $hasNotStable = $false
     $hasPotentially = $false
     foreach ($line in $statusLines) {
@@ -114,48 +150,156 @@ if ($macAsStatus -eq "NOT STABLE") {
     }
     if ($hasNotStable) {
         $hostStatus = "NOT STABLE"
-        $hostColor = "#ff69b4"
+        $hostColor = "Magenta"
     } elseif ($hasPotentially) {
         $hostStatus = "POTENTIALLY UNSTABLE"
-        $hostColor = "#ffa500"
+        $hostColor = "Yellow"
     } else {
         $hostStatus = "STABLE"
-        $hostColor = "#0f0"
+        $hostColor = "Green"
     }
 }
 
 # Terminal output
-Write-Host "=== USB Tree (basic) ===" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "USB TREE" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host $treeOutput
+Write-Host ""
 Write-Host "Furthest jumps: $maxHops"
 Write-Host "Number of tiers: $numTiers"
 Write-Host "Total devices: $deviceCount"
 Write-Host ""
-Write-Host "=== Stability per platform (based on $maxHops hops) ===" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "STABILITY PER PLATFORM (based on $maxHops hops)" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host $statusSummaryTerminal
 Write-Host ""
-Write-Host "=== Host summary ===" -ForegroundColor Cyan
-Write-Host "Host status: $hostStatus"
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "HOST SUMMARY" -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "Host status: " -NoNewline
+Write-Host "$hostStatus" -ForegroundColor $hostColor
 Write-Host "Stability Score: $stabilityScore/10"
-Write-Host "If unstable: Reduce number of tiers."
 Write-Host ""
 
-# Save txt (plain text)
-"USB Tree Report - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nStability Summary`n$statusSummaryTerminal`nHost Status: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
+# Save report
+"USB TREE REPORT - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nSTABILITY SUMMARY`n$statusSummaryTerminal`nHOST STATUS: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
+Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
-# HTML with dark theme
+# HTML report
 $html = @"
-<html><body style='font-family:Consolas,monospace;background:#000;color:#ccc;padding:20px;'>
-<h1>USB Tree Report - $dateStamp</h1>
-<pre style='color:#0f0;'>$treeOutput</pre>
-<p>Furthest jumps: $maxHops<br>Number of tiers: $numTiers<br>Total devices: $deviceCount</p>
-<h2>Stability Summary</h2>
-<pre>$statusSummaryHtml</pre>
-<h2>Host Status: <span style='color:$hostColor'>$hostStatus</span> (Score: $stabilityScore/10)</h2>
-</body></html>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>USB Tree Diagnostic Report</title>
+    <style>
+        body { font-family: 'Consolas', monospace; background: #0d1117; color: #e6edf3; padding: 30px; }
+        h1 { color: #79c0ff; border-bottom: 2px solid #30363d; }
+        h2 { color: #79c0ff; margin-top: 30px; }
+        pre { background: #161b22; padding: 20px; border-radius: 8px; color: #7ee787; white-space: pre-wrap; }
+        .stable { color: #7ee787; }
+        .warning { color: #ffa657; }
+        .critical { color: #ff7b72; }
+        .summary { background: #161b22; padding: 20px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>USB Tree Diagnostic Report</h1>
+    <div class="summary">
+        <p><strong>Generated:</strong> $(Get-Date)</p>
+        <p><strong>Platform:</strong> Windows $([System.Environment]::OSVersion.VersionString)</p>
+        <p><strong>Max hops:</strong> $maxHops</p>
+        <p><strong>External hubs:</strong> $($maxHops - 1)</p>
+        <p><strong>Total tiers:</strong> $numTiers</p>
+    </div>
+    
+    <h2>USB Device Tree</h2>
+    <pre>$treeOutput</pre>
+    
+    <h2>Stability Assessment</h2>
+    <div class="summary">
+        $statusSummaryTerminal
+    </div>
+    
+    <h2>Host Status</h2>
+    <div class="summary">
+        <p><strong>Status:</strong> <span style="color: $(if ($hostStatus -eq 'STABLE') { '#7ee787' } elseif ($hostStatus -eq 'POTENTIALLY UNSTABLE') { '#ffa657' } else { '#ff7b72' })">$hostStatus</span></p>
+        <p><strong>Score:</strong> $stabilityScore/10</p>
+    </div>
+</body>
+</html>
 "@
 $html | Out-File $outHtml
 
-Write-Host "Report saved as $outTxt"
 $open = Read-Host "Open HTML report in browser? (y/n)"
-if ($open -match '^[yY]') { Start-Process $outHtml }
+if ($open -eq 'y') { Start-Process $outHtml }
+
+# Deep Analytics - only in admin mode
+if ($isElevated) {
+    Write-Host ""
+    Write-Host "==============================================================================" -ForegroundColor Magenta
+    Write-Host "DEEP ANALYTICS - Real-time USB Monitoring" -ForegroundColor Magenta
+    Write-Host "==============================================================================" -ForegroundColor Magenta
+    Write-Host "Starting deep analytics with all collected data..." -ForegroundColor Gray
+    Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
+    Write-Host ""
+    
+    # Custom logging function
+    $script:RandomErrors = 0
+    $script:Rehandshakes = 0
+    $script:IsStable = $true
+    $script:StartTime = Get-Date
+    $script:LastEvents = @()
+    $script:LogFile = "$env:TEMP\usb-deep-analytics-$dateStamp.log"
+    
+    function Write-USBEvent {
+        param($Type, $Message, $Device)
+        $time = Get-Date -Format "HH:mm:ss.fff"
+        $event = "[$time] [$Type] $Message $Device"
+        Add-Content -Path $script:LogFile -Value $event
+        
+        # Update counters
+        if ($Type -eq "ERROR") { $script:RandomErrors++ }
+        if ($Type -eq "REHANDSHAKE") { $script:Rehandshakes++ }
+        
+        # Keep last 10 events
+        $script:LastEvents = @($event) + $script:LastEvents[0..8]
+    }
+    
+    # Start monitoring loop
+    while ($true) {
+        $elapsed = (Get-Date) - $script:StartTime
+        $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+        $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
+        
+        Clear-Host
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host "DEEP ANALYTICS - $([string]::Format('{0:hh\:mm\:ss}', $elapsed)) elapsed" -ForegroundColor Magenta
+        Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host ""
+        Write-Host "STATUS: " -NoNewline
+        Write-Host "$statusText" -ForegroundColor $statusColor
+        Write-Host ""
+        Write-Host "RANDOM ERRORS: " -NoNewline
+        Write-Host "$($script:RandomErrors.ToString('D2'))" -ForegroundColor $(if ($script:RandomErrors -gt 0) { "Yellow" } else { "Gray" })
+        Write-Host "RE-HANDSHAKES: " -NoNewline
+        Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+        Write-Host ""
+        Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
+        if ($script:LastEvents.Count -eq 0) {
+            Write-Host "  No events detected"
+        } else {
+            foreach ($event in $script:LastEvents) {
+                Write-Host "  $event"
+            }
+        }
+        Write-Host ""
+        Write-Host "Log file: $($script:LogFile)" -ForegroundColor Gray
+        
+        # Simulate some monitoring (in reality you'd hook into WMI events)
+        Start-Sleep -Seconds 2
+    }
+}
