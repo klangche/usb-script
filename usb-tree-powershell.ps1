@@ -52,7 +52,7 @@ foreach ($id in $map.Keys) {
 $numTiers = $maxHops + 1
 $stabilityScore = [Math]::Max(1, 9 - $maxHops)
 
-# Platforms and limits (same as before)
+# Platforms and limits
 $platforms = @{
     "Windows"                  = @{rec=5; max=7}
     "Linux"                    = @{rec=4; max=6}
@@ -64,19 +64,42 @@ $platforms = @{
     "Android Tablet (Exynos)"  = @{rec=2; max=4}
 }
 
-$statusSummary = ""
+# Build aligned status list
+$statusLines = @()
 foreach ($plat in $platforms.Keys) {
     $rec = $platforms[$plat].rec
     $max = $platforms[$plat].max
     $status = if ($numTiers -le $rec) { "Stable" } 
               elseif ($numTiers -le $max) { "Potentially unstable" } 
               else { "Not stable" }
-    $statusSummary += "$plat`t`t$status`n"
+    $statusLines += [PSCustomObject]@{ Platform = $plat; Status = $status }
+}
+
+# Sort in consistent order
+$order = @("Windows", "Linux", "Mac Intel", "Mac Apple Silicon", "iPad USB-C (M-series)", "iPhone USB-C", "Android Phone (Qualcomm)", "Android Tablet (Exynos)")
+$statusLines = $statusLines | Sort-Object { $order.IndexOf($_.Platform) }
+
+# Aligned terminal string
+$maxPlatLen = ($statusLines.Platform | Measure-Object Length -Maximum).Maximum
+$statusSummaryTerminal = ""
+foreach ($line in $statusLines) {
+    $pad = " " * ($maxPlatLen - $line.Platform.Length + 4)
+    $statusSummaryTerminal += "$($line.Platform)$pad$($line.Status)`n"
+}
+
+# Colored HTML string
+$statusSummaryHtml = ""
+foreach ($line in $statusLines) {
+    $color = if ($line.Status -eq "Stable") { "#0f0" } 
+             elseif ($line.Status -eq "Potentially unstable") { "#ffa500" } 
+             else { "#ff69b4" }
+    $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
 }
 
 $hostStatus = if ($numTiers -le 5) { "Stable" } 
               elseif ($numTiers -le 7) { "Potentially unstable" } 
               else { "Not stable" }
+$hostColor = if ($hostStatus -eq "Stable") { "#0f0" } elseif ($hostStatus -eq "Potentially unstable") { "#ffa500" } else { "#ff69b4" }
 
 # Terminal output
 Write-Host "=== USB Tree (basic) ===" -ForegroundColor Cyan
@@ -86,7 +109,7 @@ Write-Host "Number of tiers: $numTiers"
 Write-Host "Total devices: $deviceCount"
 Write-Host ""
 Write-Host "=== Stability per platform (based on $maxHops hops) ===" -ForegroundColor Cyan
-Write-Host $statusSummary
+Write-Host $statusSummaryTerminal
 Write-Host ""
 Write-Host "=== Host summary ===" -ForegroundColor Cyan
 Write-Host "Host status: $hostStatus"
@@ -95,17 +118,17 @@ Write-Host "If unstable: Reduce number of tiers."
 Write-Host ""
 
 # Save txt (plain text)
-"USB Tree Report - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nStability Summary`n$statusSummary`nHost Status: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
+"USB Tree Report - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nStability Summary`n$statusSummaryTerminal`nHost Status: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
 
-# HTML with colors (same as before)
+# HTML with dark theme
 $html = @"
-<html><body style='font-family:Consolas,monospace;background:#000;color:#0f0;padding:20px;'>
+<html><body style='font-family:Consolas,monospace;background:#000;color:#ccc;padding:20px;'>
 <h1>USB Tree Report - $dateStamp</h1>
-<pre>$treeOutput</pre>
+<pre style='color:#0f0;'>$treeOutput</pre>
 <p>Furthest jumps: $maxHops<br>Number of tiers: $numTiers<br>Total devices: $deviceCount</p>
 <h2>Stability Summary</h2>
-<pre>$statusSummary</pre>
-<h2>Host Status: $hostStatus (Score: $stabilityScore/10)</h2>
+<pre>$statusSummaryHtml</pre>
+<h2>Host Status: <span style='color:$hostColor'>$hostStatus</span> (Score: $stabilityScore/10)</h2>
 </body></html>
 "@
 $html | Out-File $outHtml
