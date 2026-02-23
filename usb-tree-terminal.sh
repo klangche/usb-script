@@ -171,4 +171,115 @@ generate_html_report() {
         h1 { color: #79c0ff; border-bottom: 2px solid #30363d; }
         h2 { color: #79c0ff; margin-top: 30px; }
         pre { background: #161b22; padding: 20px; border-radius: 8px; color: #7ee787; white-space: pre-wrap; }
-        .summary { background: #161b22
+        .summary { background: #161b22; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .stable { color: #7ee787; }
+        .warning { color: #ffa657; }
+        .critical { color: #ff7b72; }
+    </style>
+</head>
+<body>
+    <h1>USB Tree Diagnostic Report</h1>
+    <div class="summary">
+        <p><strong>Generated:</strong> $timestamp</p>
+        <p><strong>Platform:</strong> $platform</p>
+        <p><strong>Max hops:</strong> $max_hops</p>
+        <p><strong>External hubs:</strong> $((max_hops - 1))</p>
+    </div>
+    
+    <h2>USB Device Tree</h2>
+    <pre>$usb_data</pre>
+    
+    <h2>Stability Assessment</h2>
+    <div class="summary">
+        <pre>$stability_text</pre>
+    </div>
+    
+    <h2>Host Status</h2>
+    <div class="summary">
+        <pre>$host_text</pre>
+    </div>
+</body>
+</html>
+EOF
+    
+    echo -e "\033[36mHTML report saved as: $html_file\033[0m"
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+main() {
+    echo "=============================================================================="
+    echo "USB TREE DIAGNOSTIC TOOL - PROFESSIONAL EDITION"
+    echo "=============================================================================="
+    echo "Platform: $(detect_platform) ($(uname -m))"
+    echo "Zero-footprint mode: Everything runs in memory"
+    echo "=============================================================================="
+    echo ""
+    
+    read -p "Run with admin/sudo for maximum detail? (y/n): " adminChoice
+    echo ""
+    
+    local use_sudo=false
+    if [[ $adminChoice =~ ^[yY]$ ]]; then
+        use_sudo=true
+        echo -e "\033[36mAdmin mode enabled - collecting detailed USB data...\033[0m"
+    else
+        echo -e "\033[36mRunning without admin - basic USB data only\033[0m"
+    fi
+    
+    local platform=$(detect_platform)
+    local usb_data=$(get_usb_data "$platform" "$use_sudo")
+    
+    echo ""
+    echo -e "\033[36mUSB TREE\033[0m"
+    echo "=============================================================================="
+    echo "$usb_data"
+    echo ""
+    
+    # For now, ask user for max hops (in future, parse from data)
+    read -p "Maximum USB hops detected (or enter manually): " max_hops
+    [[ -z "$max_hops" ]] && max_hops=3
+    
+    echo ""
+    assess_stability $max_hops
+    echo ""
+    assess_host_status $max_hops
+    echo ""
+    
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local txt_report="$HOME/usb-tree-report-$timestamp.txt"
+    local html_report="$HOME/usb-tree-report-$timestamp.html"
+    
+    # Save text report
+    {
+        echo "USB TREE DIAGNOSTIC REPORT - $timestamp"
+        echo "Platform: $platform ($(uname -m))"
+        echo "Max hops: $max_hops"
+        echo ""
+        echo "USB TREE:"
+        echo "$usb_data"
+        echo ""
+        echo "STABILITY PER PLATFORM:"
+        assess_stability $max_hops | sed 's/\x1b\[[0-9;]*m//g'
+        echo ""
+        echo "HOST SUMMARY:"
+        assess_host_status $max_hops | sed 's/\x1b\[[0-9;]*m//g'
+    } > "$txt_report"
+    
+    echo -e "\033[36mReport saved as: $txt_report\033[0m"
+    
+    read -p "Open HTML report in browser? (y/n): " htmlChoice
+    if [[ $htmlChoice =~ ^[yY]$ ]]; then
+        generate_html_report "$platform" "$usb_data" "$max_hops" "$html_report"
+        if [[ "$platform" == "macOS" ]]; then
+            open "$html_report"
+        elif [[ "$platform" == "Linux" ]]; then
+            xdg-open "$html_report" 2>/dev/null || echo "Please open $html_report manually"
+        elif [[ "$platform" == "Windows" ]]; then
+            start "$html_report" 2>/dev/null || echo "Please open $html_report manually"
+        fi
+    fi
+}
+
+main "$@"
