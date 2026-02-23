@@ -1,5 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
-# Compatible with PowerShell 5.1 and 7+ – Host status capped by Mac Apple Silicon
+# Compatible with PowerShell 5.1 and 7+
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -69,9 +69,9 @@ $statusLines = @()
 foreach ($plat in $platforms.Keys) {
     $rec = $platforms[$plat].rec
     $max = $platforms[$plat].max
-    $status = if ($numTiers -le $rec) { "Stable" } 
-              elseif ($numTiers -le $max) { "Potentially unstable" } 
-              else { "Not stable" }
+    $status = if ($numTiers -le $rec) { "STABLE" } 
+              elseif ($numTiers -le $max) { "POTENTIALLY UNSTABLE" } 
+              else { "NOT STABLE" }
     $statusLines += [PSCustomObject]@{ Platform = $plat; Status = $status }
 }
 
@@ -88,8 +88,8 @@ foreach ($line in $statusLines) {
 
 $statusSummaryHtml = ""
 foreach ($line in $statusLines) {
-    $color = if ($line.Status -eq "Stable") { "#0f0" } 
-             elseif ($line.Status -eq "Potentially unstable") { "#ffa500" } 
+    $color = if ($line.Status -eq "STABLE") { "#0f0" } 
+             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "#ffa500" } 
              else { "#ff69b4" }
     $statusSummaryHtml += "$($line.Platform)`t`t<span style='color:$color'>$($line.Status)</span>`n"
 }
@@ -97,29 +97,29 @@ foreach ($line in $statusLines) {
 # Strict host status: Mac Apple Silicon is the bottleneck
 $macAsStatus = ($statusLines | Where-Object { $_.Platform -eq "Mac Apple Silicon" }).Status
 
-if ($macAsStatus -eq "Not stable") {
-    $hostStatus = "Not stable"
+if ($macAsStatus -eq "NOT STABLE") {
+    $hostStatus = "NOT STABLE"
     $hostColor = "#ff69b4"
-} elseif ($macAsStatus -eq "Potentially unstable") {
-    $hostStatus = "Potentially unstable"
+} elseif ($macAsStatus -eq "POTENTIALLY UNSTABLE") {
+    $hostStatus = "POTENTIALLY UNSTABLE"
     $hostColor = "#ffa500"
 } else {
-    # If Mac AS is Stable, use worst from others
+    # If Mac AS is STABLE, use worst from others
     $hasNotStable = $false
     $hasPotentially = $false
     foreach ($line in $statusLines) {
         if ($line.Platform -eq "Mac Apple Silicon") { continue }
-        if ($line.Status -eq "Not stable") { $hasNotStable = $true }
-        if ($line.Status -eq "Potentially unstable") { $hasPotentially = $true }
+        if ($line.Status -eq "NOT STABLE") { $hasNotStable = $true }
+        if ($line.Status -eq "POTENTIALLY UNSTABLE") { $hasPotentially = $true }
     }
     if ($hasNotStable) {
-        $hostStatus = "Not stable"
+        $hostStatus = "NOT STABLE"
         $hostColor = "#ff69b4"
     } elseif ($hasPotentially) {
-        $hostStatus = "Potentially unstable"
+        $hostStatus = "POTENTIALLY UNSTABLE"
         $hostColor = "#ffa500"
     } else {
-        $hostStatus = "Stable"
+        $hostStatus = "STABLE"
         $hostColor = "#0f0"
     }
 }

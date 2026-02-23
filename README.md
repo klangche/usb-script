@@ -20,7 +20,7 @@ irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree
 ```
 macOS / Linux / Git Bash:
 ```Terminal / Shell
-curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh | tr -d '\r' | bash
+curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh | bash
 ```
 Paste above command into **PowerShell** (Windows) or **Terminal** (macOS/Linux)
 
