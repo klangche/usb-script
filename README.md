@@ -1,5 +1,5 @@
 
-<h1 LINUS KLANG USB TREE </h1>
+## LINUS KLANG USB TREE
   
 # USB Tree Diagnostic Tool
 ![Version](https://img.shields.io/badge/version-0.5.6-blue)
@@ -14,7 +14,7 @@ A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess sta
 - Everyday users who want to quickly check if their USB chain is stable  
 - Technicians and sales people who need to share clear, professional diagnostics
 
-<h1>## How to Run (one single line)</h1>
+## How to Run (one single line)
 
 ```powershell
 irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
