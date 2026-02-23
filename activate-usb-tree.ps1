@@ -8,11 +8,11 @@ Write-Host ""
 # Försök köra bash-version om bash eller sh finns
 if (Get-Command bash -ErrorAction SilentlyContinue) {
     Write-Host "Bash hittades → kör full terminal-version (bäst för Linux/macOS)" -ForegroundColor Green
-    bash -c "curl -sSL https://raw.githubusercontent.com/DITT-KONTO/usb-tools/main/usb-tree-terminal.sh | bash"
+    bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh | bash"
     exit
 } elseif (Get-Command sh -ErrorAction SilentlyContinue) {
     Write-Host "sh hittades → kör terminal-version" -ForegroundColor Green
-    sh -c "curl -sSL https://raw.githubusercontent.com/DITT-KONTO/usb-tools/main/usb-tree-terminal.sh | bash"
+    sh -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/main/usb-tree-terminal.sh | bash"
     exit
 }
 
@@ -22,12 +22,13 @@ Write-Host "Notera: Trädet blir grundläggande utan lsusb/system_profiler" -For
 Write-Host ""
 
 # Fråga om admin
-$adminChoice = Read-Host "Kör med admin-rättigheter för bättre detaljer? (y/n)"
+$adminChoice = Read-Host "do you have admin rights? (y/n)"
 if ($adminChoice -match '^[yY]') {
     Write-Host "Begär elevation..." -ForegroundColor Yellow
-    Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/DITT-KONTO/usb-tools/main/usb-tree-powershell.ps1 | iex" -Verb RunAs
+    Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1 | iex" -Verb RunAs
     exit
 }
 
 # Kör non-admin Windows-version direkt
-irm https://raw.githubusercontent.com/DITT-KONTO/usb-tools/main/usb-tree-powershell.ps1 | iex
+
+irm https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1 | iex
