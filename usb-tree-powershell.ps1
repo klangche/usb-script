@@ -1,4 +1,5 @@
 # usb-tree-powershell.ps1 - USB Tree Diagnostic for Windows
+# Compatible with PowerShell 5.1 and 7+
 
 Write-Host "USB Tree Diagnostic Tool - Windows mode" -ForegroundColor Cyan
 Write-Host "Platform: Windows ($([System.Environment]::OSVersion.VersionString))" -ForegroundColor Cyan
@@ -13,8 +14,12 @@ $dateStamp = Get-Date -Format yyyyMMdd-HHmm
 $outTxt = "$env:TEMP\usb-tree-report-$dateStamp.txt"
 $outHtml = "$env:TEMP\usb-tree-report-$dateStamp.html"
 
-# Get devices with better name fallback
-$devices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, @{n='Name';e={if ($_.FriendlyName) { $_.FriendlyName } elseif ($_.Name) { $_.Name } else { $_.InstanceId }}}
+# Get devices with PS 5.1 compatible name fallback
+$devices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, @{n='Name';e={
+    if ($_.FriendlyName) { $_.FriendlyName }
+    elseif ($_.Name) { $_.Name }
+    else { $_.InstanceId }
+}}
 
 $map = @{}
 foreach ($d in $devices) {
@@ -26,7 +31,7 @@ foreach ($d in $devices) {
     } catch {}
 }
 
-# Recursive print with hops
+# Recursive print
 $treeOutput = ""
 $maxHops = 0
 $deviceCount = $devices.Count
@@ -47,7 +52,7 @@ foreach ($id in $map.Keys) {
 $numTiers = $maxHops + 1
 $stabilityScore = [Math]::Max(1, 9 - $maxHops)
 
-# Platforms and limits
+# Platforms and limits (same as before)
 $platforms = @{
     "Windows"                  = @{rec=5; max=7}
     "Linux"                    = @{rec=4; max=6}
@@ -66,14 +71,12 @@ foreach ($plat in $platforms.Keys) {
     $status = if ($numTiers -le $rec) { "Stable" } 
               elseif ($numTiers -le $max) { "Potentially unstable" } 
               else { "Not stable" }
-    $color = if ($status -eq "Stable") { "#0f0" } elseif ($status -eq "Potentially unstable") { "#ffa500" } else { "#ff69b4" }
-    $statusSummary += "$plat`t`t<span style='color:$color'>$status</span>`n"
+    $statusSummary += "$plat`t`t$status`n"
 }
 
 $hostStatus = if ($numTiers -le 5) { "Stable" } 
               elseif ($numTiers -le 7) { "Potentially unstable" } 
               else { "Not stable" }
-$hostColor = if ($hostStatus -eq "Stable") { "#0f0" } elseif ($hostStatus -eq "Potentially unstable") { "#ffa500" } else { "#ff69b4" }
 
 # Terminal output
 Write-Host "=== USB Tree (basic) ===" -ForegroundColor Cyan
@@ -83,18 +86,18 @@ Write-Host "Number of tiers: $numTiers"
 Write-Host "Total devices: $deviceCount"
 Write-Host ""
 Write-Host "=== Stability per platform (based on $maxHops hops) ===" -ForegroundColor Cyan
-Write-Host $statusSummary.Replace("<span style='color:#0f0'>", "").Replace("</span>", "")  # Strip HTML for terminal
+Write-Host $statusSummary
 Write-Host ""
 Write-Host "=== Host summary ===" -ForegroundColor Cyan
-Write-Host "Host status: <span style='color:$hostColor'>$hostStatus</span>"
+Write-Host "Host status: $hostStatus"
 Write-Host "Stability Score: $stabilityScore/10"
 Write-Host "If unstable: Reduce number of tiers."
 Write-Host ""
 
-# Save txt
+# Save txt (plain text)
 "USB Tree Report - $dateStamp`n`n$treeOutput`nFurthest jumps: $maxHops`nNumber of tiers: $numTiers`nTotal devices: $deviceCount`n`nStability Summary`n$statusSummary`nHost Status: $hostStatus (Score: $stabilityScore/10)" | Out-File $outTxt
 
-# HTML with colors
+# HTML with colors (same as before)
 $html = @"
 <html><body style='font-family:Consolas,monospace;background:#000;color:#0f0;padding:20px;'>
 <h1>USB Tree Report - $dateStamp</h1>
@@ -102,7 +105,7 @@ $html = @"
 <p>Furthest jumps: $maxHops<br>Number of tiers: $numTiers<br>Total devices: $deviceCount</p>
 <h2>Stability Summary</h2>
 <pre>$statusSummary</pre>
-<h2>Host Status: <span style='color:$hostColor'>$hostStatus</span> (Score: $stabilityScore/10)</h2>
+<h2>Host Status: $hostStatus (Score: $stabilityScore/10)</h2>
 </body></html>
 "@
 $html | Out-File $outHtml
@@ -110,4 +113,3 @@ $html | Out-File $outHtml
 Write-Host "Report saved as $outTxt"
 $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -match '^[yY]') { Start-Process $outHtml }
-
