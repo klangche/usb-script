@@ -100,6 +100,7 @@ $html = @"
 "@
 $html | Out-File $outHtml
 
-Write-Host "Rapport sparad som $outTxt"
-$open = Read-Host "Öppna HTML-rapport i webbläsare? (y/n)"
+Write-Host "Repport saved as $outTxt"
+$open = Read-Host "Open Report in Browser? (y/n)"
+
 if ($open -match '^[yY]') { Start-Process $outHtml }
