@@ -21,7 +21,7 @@ irm https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-windo
 
 OSX
 ```Terminal
-curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-windows.ps1 | bash
+curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-lk-usb-tree-osx.sh | bash
 ```
 
 Linux
