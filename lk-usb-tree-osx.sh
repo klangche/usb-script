@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - macOS Edition
+# USB Tree Diagnostic Tool - macOS Edition
 # =============================================================================
-# Mirrors Windows PowerShell version as closely as possible
-# Uses system_profiler → parsed tree + hop counts
-# Same prompts, colors, stability logic, HTML style
+# Visualizes USB tree on macOS using system_profiler, calculates hops, assesses
+# stability, and exports to HTML. Mirrors structure of Linux/Windows editions.
+#
+# Notes:
+# - sudo usually not needed, but optional for edge cases.
+# - Parses indented output for tree hierarchy.
+# - Skips metadata lines to focus on devices/hubs.
+#
+# TODO: Handle virtual USB devices (e.g., from VMs) with filters.
+# TODO: Add power consumption estimates if available via ioreg.
+#
+# DEBUG TIP: If raw_data empty, run 'system_profiler SPUSBDataType' manually.
 # =============================================================================
 
-# Colors (exact match to PowerShell)
+# Colors for output consistency.
 CYAN='\033[36m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
@@ -21,9 +30,7 @@ echo -e "${CYAN}================================================================
 echo -e "${GRAY}Platform: macOS ($(sw_vers -productVersion 2>/dev/null || echo "Unknown")) ($(uname -m))${RESET}"
 echo ""
 
-# =============================================================================
-# Admin/sudo prompt (macOS usually doesn't need it for system_profiler)
-# =============================================================================
+# Optional sudo prompt (rarely impacts macOS).
 read -p "Run with sudo for maximum detail? (y/n): " sudo_choice
 echo ""
 
@@ -35,9 +42,7 @@ else
     echo -e "${YELLOW}Running without sudo (usually sufficient on macOS)${RESET}"
 fi
 
-# =============================================================================
-# Collect raw data
-# =============================================================================
+# Collect data.
 echo -e "${GRAY}Enumerating USB devices...${RESET}"
 
 if $use_sudo; then
@@ -46,37 +51,32 @@ else
     raw_data=$(system_profiler SPUSBDataType 2>/dev/null)
 fi
 
+# Error check.
 if [[ -z "$raw_data" ]]; then
     echo -e "${YELLOW}No USB data retrieved. Check system_profiler.${RESET}"
     exit 1
 fi
 
-# =============================================================================
-# Simple tree parsing from indented system_profiler output
-# (Improves on repo's basic grep version)
-# =============================================================================
+# Parse tree (use here-string to avoid subshell scoping).
 tree_output=""
 max_hops=0
-current_level=0
-prev_level=0
 hubs=0
 devices=0
 
-echo "$raw_data" | while IFS= read -r line; do
-    # Count leading spaces to determine level (system_profiler uses 4 spaces per indent)
+while IFS= read -r line; do
+    # Calculate level from leading spaces (4 per indent).
     leading_spaces="${line%%[^[:space:]]*}"
-
     level=$(( ${#leading_spaces} / 4 ))
 
-    # Trim line
+    # Trim and skip irrelevant lines.
     trimmed=$(echo "$line" | sed 's/^[[:space:]]*//')
-
     if [[ -z "$trimmed" || "$trimmed" =~ ^(Product ID:|Vendor ID:|Serial Number:|Speed:|Manufacturer:|Location ID:|Current Available \(mA\):) ]]; then
-        continue  # skip metadata lines we don't need for tree
+        continue
     fi
 
+    # Process device/hub lines (end with :).
     if [[ "$trimmed" =~ :$ ]]; then
-        name="${trimmed%:}"  # remove trailing :
+        name="${trimmed%:}"  # Remove trailing colon.
         name=$(echo "$name" | sed 's/^[[:space:]]*//')
 
         if [[ "$name" == *Hub* || "$name" == *hub* ]]; then
@@ -87,29 +87,30 @@ echo "$raw_data" | while IFS= read -r line; do
             ((devices++))
         fi
 
-        # Tree prefix
+        # Build prefix.
         prefix=""
-        for ((i=1; i<level; i++)); do
-            prefix="${prefix}│   "
-        done
-        if (( level > 0 )); then
-            prefix="${prefix}├── "
-        fi
+        for ((i=1; i<level; i++)); do prefix="${prefix}│   "; done
+        if (( level > 0 )); then prefix="${prefix}├── "; fi
 
         tree_output+="${prefix}${display} ← ${level} hops\n"
-        (( max_hops = level > max_hops ? level : max_hops ))
 
-        current_level=$level
+        (( max_hops = level > max_hops ? level : max_hops ))
     fi
-done
+done <<< "$raw_data"
+
+# Error check: Empty tree.
+if [[ -z "$tree_output" ]]; then
+    echo -e "${YELLOW}Warning: No devices parsed. Using raw data.${RESET}"
+    tree_output="$raw_data"
+    # DEBUG TIP: Save raw for review.
+    echo "$raw_data" > /tmp/usb-raw-osx.txt
+fi
 
 num_tiers=$((max_hops + 1))
 stability_score=$(( 9 - max_hops ))
 (( stability_score < 1 )) && stability_score=1
 
-# =============================================================================
-# Stability assessment (exact same logic/table as PowerShell)
-# =============================================================================
+# Output tree.
 echo ""
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}USB TREE${RESET}"
@@ -122,6 +123,7 @@ echo -e "${GRAY}Total devices: $devices${RESET}"
 echo -e "${GRAY}Total hubs: $hubs${RESET}"
 echo ""
 
+# Stability section.
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}STABILITY PER PLATFORM (based on $max_hops hops)${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
@@ -130,12 +132,15 @@ platforms=(
     "Windows:5:7:STABLE"
     "Linux:4:6:STABLE"
     "Mac Intel:5:7:STABLE"
-    "Mac Apple Silicon:3:5:NOT STABLE"  # will be overridden
+    "Mac Apple Silicon:3:5:NOT STABLE"
     "iPad USB-C (M-series):2:4:NOT STABLE"
     "iPhone USB-C:2:4:STABLE"
     "Android Phone (Qualcomm):3:5:STABLE"
     "Android Tablet (Exynos):2:4:NOT STABLE"
 )
+
+host_status="STABLE"
+host_color=$GREEN
 
 for entry in "${platforms[@]}"; do
     IFS=':' read -r plat rec max _ <<< "$entry"
@@ -151,7 +156,6 @@ for entry in "${platforms[@]}"; do
         color=$MAGENTA
     fi
 
-    # Special override for host relevance
     if [[ "$plat" == "Mac Apple Silicon" ]]; then
         host_status="$status"
         host_color="$color"
@@ -168,11 +172,17 @@ echo -e "Host status:           ${host_color}${host_status}${RESET}"
 echo -e "${GRAY}Stability Score:${RESET} $stability_score/10"
 echo ""
 
-# =============================================================================
-# HTML report (black bg, same style)
-# =============================================================================
+# HTML report.
 timestamp=$(date +"%Y%m%d-%H%M%S")
 html_file="$HOME/usb-tree-report-$timestamp.html"
+
+# Build stability HTML.
+stability_html=""
+for entry in "${platforms[@]}"; do
+    IFS=':' read -r plat rec max _ <<< "$entry"
+    if (( max_hops <= rec )); then col="green"; elif (( max_hops <= max )); then col="yellow"; else col="magenta"; fi
+    stability_html+="  <span class=\"gray\">$(printf '%-25s' "$plat")</span> <span class=\"$col\">$status</span>\n"
+done
 
 cat > "$html_file" << EOF
 <!DOCTYPE html>
@@ -205,14 +215,12 @@ $tree_output
 <span class="cyan">==============================================================================</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $max_hops hops)</span>
 <span class="cyan">==============================================================================</span>
-$(for p in "${platforms[@]}"; do IFS=':' read plat rec max _ <<< "$p"; 
-  if (( max_hops <= rec )); then col="green"; elif (( max_hops <= max )); then col="yellow"; else col="magenta"; fi;
-  echo "  <span class=\"gray\">$(printf '%-25s' "$plat")</span> <span class=\"$col\">$status</span>"; done)
+$stability_html
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
-  <span class="gray">Host status:           </span><span class="${host_color/#\\033\[([0-9;]+)m/}"> $host_status</span>
+  <span class="gray">Host status:           </span><span class="${host_color:2:-4}"> $host_status</span>
   <span class="gray">Stability Score:       </span><span class="gray">$stability_score/10</span>
 </pre>
 </body>
