@@ -1,11 +1,9 @@
-  
-# Linus USB Tree Diagnostic Tool
 ![Version](https://img.shields.io/badge/version-0.6.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 
-
+# Linus USB Tree Diagnostic Tool
 A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.
 
 
@@ -125,7 +123,7 @@ STABILITY PER PLATFORM (based on 3 hops)
 Windows                  STABLE
 Linux                    STABLE
 Mac Intel                STABLE
-Mac Apple Silicon        STABLE           ← borderline at 3 hops
+Mac Apple Silicon        STABLE 
 iPad USB-C (M-series)    POTENTIALLY UNSTABLE
 iPhone USB-C             STABLE
 Android Phone (Qualcomm) STABLE
@@ -140,7 +138,7 @@ Stability Score:       6/10
 Report saved as: C:\Users\AVTech\AppData\Local\Temp\usb-tree-report-20260224-141245.txt
 HTML report saved as: C:\Users\AVTech\AppData\Local\Temp\usb-tree-report-20260224-141245.html
 
-Open HTML report in browser? (y/n): y
+Open HTML report in browser? (y/n): n
 (HTML opened – black background with colored status indicators)
 
 Run Deep Analytics to monitor USB stability? (y/n): y
