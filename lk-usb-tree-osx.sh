@@ -2,48 +2,73 @@
 # =============================================================================
 # USB Tree Diagnostic Tool - macOS Edition
 # =============================================================================
-# Visualizes USB tree on macOS using system_profiler, calculates hops, assesses
-# stability, and exports to HTML. Mirrors structure of Linux/Windows editions.
-#
-# Notes:
-# - sudo usually not needed, but optional for edge cases.
-# - Parses indented output for tree hierarchy.
-# - Skips metadata lines to focus on devices/hubs.
-#
-# TODO: Handle virtual USB devices (e.g., from VMs) with filters.
-# TODO: Add power consumption estimates if available via ioreg.
-#
-# DEBUG TIP: If raw_data empty, run 'system_profiler SPUSBDataType' manually.
+# Uses centralized configuration from usb-tree-config.json
 # =============================================================================
 
-# Colors for output consistency.
-CYAN='\033[36m'
-GREEN='\033[32m'
-YELLOW='\033[33m'
-MAGENTA='\033[35m'
-GRAY='\033[90m'
+# Load configuration
+CONFIG_URL="https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-config.json"
+CONFIG=$(curl -s "$CONFIG_URL")
+
+# Helper function to get config values
+get_config() {
+    echo "$CONFIG" | jq -r "$1"
+}
+
+# Colors from config
+CYAN=$(get_config '.colors.cyan')
+GREEN=$(get_config '.colors.green')
+YELLOW=$(get_config '.colors.yellow')
+MAGENTA=$(get_config '.colors.magenta')
+GRAY=$(get_config '.colors.gray')
 RESET='\033[0m'
 
+# Messages
+WELCOME=$(get_config '.messages.en.welcome')
+PLATFORM_MSG=$(get_config '.messages.en.platform')
+NO_DEVICES=$(get_config '.messages.en.noDevices')
+ADMIN_PROMPT=$(get_config '.messages.en.adminPrompt')
+ADMIN_YES=$(get_config '.messages.en.adminYes')
+ADMIN_NO=$(get_config '.messages.en.adminNo')
+ENUMERATING=$(get_config '.messages.en.enumerating')
+FOUND=$(get_config '.messages.en.found')
+DEVICES=$(get_config '.messages.en.devices')
+HUBS=$(get_config '.messages.en.hubs')
+FURTHEST=$(get_config '.messages.en.furthestJumps')
+TIERS=$(get_config '.messages.en.numberOfTiers')
+TOTAL_DEVICES=$(get_config '.messages.en.totalDevices')
+TOTAL_HUBS=$(get_config '.messages.en.totalHubs')
+HOST_STATUS=$(get_config '.messages.en.hostStatus')
+STABILITY_SCORE=$(get_config '.messages.en.stabilityScore')
+REPORT_SAVED=$(get_config '.messages.en.reportSaved')
+HTML_SAVED=$(get_config '.messages.en.htmlSaved')
+EXIT_PROMPT=$(get_config '.messages.en.exitPrompt')
+HTML_PROMPT=$(get_config '.messages.en.htmlPrompt')
+
+# Scoring config
+MIN_SCORE=$(get_config '.scoring.minScore')
+STABLE_THRESHOLD=$(get_config '.scoring.thresholds.stable')
+POTENTIALLY_UNSTABLE_THRESHOLD=$(get_config '.scoring.thresholds.potentiallyUnstable')
+
 echo -e "${CYAN}==============================================================================${RESET}"
-echo -e "${CYAN}USB TREE DIAGNOSTIC TOOL - macOS EDITION${RESET}"
+echo -e "${CYAN}${WELCOME} - macOS EDITION${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
-echo -e "${GRAY}Platform: macOS ($(sw_vers -productVersion 2>/dev/null || echo "Unknown")) ($(uname -m))${RESET}"
+echo -e "${GRAY}${PLATFORM_MSG}: macOS ($(sw_vers -productVersion 2>/dev/null || echo "Unknown")) ($(uname -m))${RESET}"
 echo ""
 
-# Optional sudo prompt (rarely impacts macOS).
-read -p "Run with sudo for maximum detail? (y/n): " sudo_choice
+# Optional sudo prompt
+read -p "$ADMIN_PROMPT " sudo_choice
 echo ""
 
 use_sudo=false
 if [[ "$sudo_choice" =~ ^[Yy]$ ]]; then
     use_sudo=true
-    echo -e "${CYAN}→ Running with sudo${RESET}"
+    echo -e "${CYAN}→ $ADMIN_YES${RESET}"
 else
-    echo -e "${YELLOW}Running without sudo (usually sufficient on macOS)${RESET}"
+    echo -e "${YELLOW}$ADMIN_NO${RESET}"
 fi
 
-# Collect data.
-echo -e "${GRAY}Enumerating USB devices...${RESET}"
+# Collect data
+echo -e "${GRAY}${ENUMERATING}...${RESET}"
 
 if $use_sudo; then
     raw_data=$(sudo system_profiler SPUSBDataType 2>/dev/null)
@@ -51,32 +76,32 @@ else
     raw_data=$(system_profiler SPUSBDataType 2>/dev/null)
 fi
 
-# Error check.
+# Error check
 if [[ -z "$raw_data" ]]; then
-    echo -e "${YELLOW}No USB data retrieved. Check system_profiler.${RESET}"
+    echo -e "${YELLOW}$NO_DEVICES${RESET}"
     exit 1
 fi
 
-# Parse tree (use here-string to avoid subshell scoping).
+# Parse tree
 tree_output=""
 max_hops=0
 hubs=0
 devices=0
 
 while IFS= read -r line; do
-    # Calculate level from leading spaces (4 per indent).
+    # Calculate level from leading spaces (4 per indent)
     leading_spaces="${line%%[^[:space:]]*}"
     level=$(( ${#leading_spaces} / 4 ))
 
-    # Trim and skip irrelevant lines.
+    # Trim and skip irrelevant lines
     trimmed=$(echo "$line" | sed 's/^[[:space:]]*//')
     if [[ -z "$trimmed" || "$trimmed" =~ ^(Product ID:|Vendor ID:|Serial Number:|Speed:|Manufacturer:|Location ID:|Current Available \(mA\):) ]]; then
         continue
     fi
 
-    # Process device/hub lines (end with :).
+    # Process device/hub lines (end with :)
     if [[ "$trimmed" =~ :$ ]]; then
-        name="${trimmed%:}"  # Remove trailing colon.
+        name="${trimmed%:}"  # Remove trailing colon
         name=$(echo "$name" | sed 's/^[[:space:]]*//')
 
         if [[ "$name" == *Hub* || "$name" == *hub* ]]; then
@@ -87,64 +112,62 @@ while IFS= read -r line; do
             ((devices++))
         fi
 
-        # Build prefix.
+        # Build prefix
         prefix=""
         for ((i=1; i<level; i++)); do prefix="${prefix}│   "; done
         if (( level > 0 )); then prefix="${prefix}├── "; fi
 
         tree_output+="${prefix}${display} ← ${level} hops\n"
-
         (( max_hops = level > max_hops ? level : max_hops ))
     fi
 done <<< "$raw_data"
 
-# Error check: Empty tree.
+# Error check: Empty tree
 if [[ -z "$tree_output" ]]; then
     echo -e "${YELLOW}Warning: No devices parsed. Using raw data.${RESET}"
     tree_output="$raw_data"
-    # DEBUG TIP: Save raw for review.
     echo "$raw_data" > /tmp/usb-raw-osx.txt
 fi
 
 num_tiers=$((max_hops + 1))
-stability_score=$(( 9 - max_hops ))
-(( stability_score < 1 )) && stability_score=1
+base_score=$(( 9 - max_hops ))
+[[ $base_score -lt $MIN_SCORE ]] && base_score=$MIN_SCORE
 
-# Output tree.
+# Determine platform for host status
+if [[ "$(uname -m)" == "arm64" ]]; then
+    platform_key="macAppleSilicon"
+else
+    platform_key="macIntel"
+fi
+
+# Output tree
 echo ""
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}USB TREE${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "$tree_output"
 echo ""
-echo -e "${GRAY}Furthest hops: $max_hops${RESET}"
-echo -e "${GRAY}Number of tiers: $num_tiers${RESET}"
-echo -e "${GRAY}Total devices: $devices${RESET}"
-echo -e "${GRAY}Total hubs: $hubs${RESET}"
+echo -e "${GRAY}${FURTHEST}: $max_hops${RESET}"
+echo -e "${GRAY}${TIERS}: $num_tiers${RESET}"
+echo -e "${GRAY}${TOTAL_DEVICES}: $devices${RESET}"
+echo -e "${GRAY}${TOTAL_HUBS}: $hubs${RESET}"
 echo ""
 
-# Stability section.
+# Stability section
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}STABILITY PER PLATFORM (based on $max_hops hops)${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
 
-platforms=(
-    "Windows:5:7:STABLE"
-    "Linux:4:6:STABLE"
-    "Mac Intel:5:7:STABLE"
-    "Mac Apple Silicon:3:5:NOT STABLE"
-    "iPad USB-C (M-series):2:4:NOT STABLE"
-    "iPhone USB-C:2:4:STABLE"
-    "Android Phone (Qualcomm):3:5:STABLE"
-    "Android Tablet (Exynos):2:4:NOT STABLE"
-)
-
+# Parse platforms from config
+platforms=$(get_config '.platformStability | keys[]')
 host_status="STABLE"
 host_color=$GREEN
 
-for entry in "${platforms[@]}"; do
-    IFS=':' read -r plat rec max _ <<< "$entry"
-
+for plat in $platforms; do
+    name=$(get_config ".platformStability.$plat.name")
+    rec=$(get_config ".platformStability.$plat.rec")
+    max=$(get_config ".platformStability.$plat.max")
+    
     if (( max_hops <= rec )); then
         status="STABLE"
         color=$GREEN
@@ -155,81 +178,95 @@ for entry in "${platforms[@]}"; do
         status="NOT STABLE"
         color=$MAGENTA
     fi
-
-    if [[ "$plat" == "Mac Apple Silicon" ]]; then
+    
+    # Track Apple Silicon for host status
+    if [[ "$plat" == "macAppleSilicon" ]]; then
         host_status="$status"
         host_color="$color"
     fi
-
-    printf "  %-25s ${color}%s${RESET}\n" "$plat" "$status"
+    
+    printf "  %-25s ${color}%s${RESET}\n" "$name" "$status"
 done
 
 echo ""
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}HOST SUMMARY${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
-echo -e "Host status:           ${host_color}${host_status}${RESET}"
-echo -e "${GRAY}Stability Score:${RESET} $stability_score/10"
+echo -e "${HOST_STATUS}:           ${host_color}${host_status}${RESET}"
+echo -e "${GRAY}${STABILITY_SCORE}:${RESET} $base_score/10"
 echo ""
 
-# HTML report.
+# HTML report
 timestamp=$(date +"%Y%m%d-%H%M%S")
-html_file="$HOME/usb-tree-report-$timestamp.html"
+html_file="$HOME/usb-tree-report-macos-$timestamp.html"
 
-# Build stability HTML.
+# Build stability HTML
 stability_html=""
-for entry in "${platforms[@]}"; do
-    IFS=':' read -r plat rec max _ <<< "$entry"
-    if (( max_hops <= rec )); then col="green"; elif (( max_hops <= max )); then col="yellow"; else col="magenta"; fi
-    stability_html+="  <span class=\"gray\">$(printf '%-25s' "$plat")</span> <span class=\"$col\">$status</span>\n"
+for plat in $platforms; do
+    name=$(get_config ".platformStability.$plat.name")
+    rec=$(get_config ".platformStability.$plat.rec")
+    max=$(get_config ".platformStability.$plat.max")
+    
+    if (( max_hops <= rec )); then
+        col="green"
+        status="STABLE"
+    elif (( max_hops <= max )); then
+        col="yellow"
+        status="POTENTIALLY UNSTABLE"
+    else
+        col="magenta"
+        status="NOT STABLE"
+    fi
+    
+    stability_html+="  <span class=\"gray\">$(printf '%-25s' "$name")</span> <span class=\"$col\">$status</span>\n"
 done
 
 cat > "$html_file" << EOF
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Tree Report - $timestamp</title>
+    <title>USB Tree Report - macOS - $timestamp</title>
     <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
+        body { background: $(get_config '.reporting.html.backgroundColor'); color: $(get_config '.reporting.html.textColor'); font-family: $(get_config '.reporting.html.fontFamily'); padding: 20px; font-size: $(get_config '.reporting.html.fontSize'); }
         pre { margin: 0; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
+        .cyan { color: $(get_config '.colors.cyan'); }
+        .green { color: $(get_config '.colors.green'); }
+        .yellow { color: $(get_config '.colors.yellow'); }
+        .magenta { color: $(get_config '.colors.magenta'); }
+        .gray { color: $(get_config '.colors.gray'); }
     </style>
 </head>
 <body>
 <pre>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
 <span class="cyan">USB TREE REPORT - macOS - $timestamp</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
 
 $tree_output
 
-<span class="gray">Furthest hops: $max_hops</span>
-<span class="gray">Number of tiers: $num_tiers</span>
-<span class="gray">Total devices: $devices</span>
-<span class="gray">Total hubs: $hubs</span>
+<span class="gray">${FURTHEST}: $max_hops</span>
+<span class="gray">${TIERS}: $num_tiers</span>
+<span class="gray">${TOTAL_DEVICES}: $devices</span>
+<span class="gray">${TOTAL_HUBS}: $hubs</span>
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $max_hops hops)</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
 $stability_html
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
 <span class="cyan">HOST SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  <span class="gray">Host status:           </span><span class="${host_color:2:-4}"> $host_status</span>
-  <span class="gray">Stability Score:       </span><span class="gray">$stability_score/10</span>
+<span class="cyan">$(get_config '.reporting.html.separator')</span>
+  <span class="gray">${HOST_STATUS}:           </span><span class="${host_color:2:-4}">$host_status</span>
+  <span class="gray">${STABILITY_SCORE}:       </span><span class="gray">$base_score/10</span>
 </pre>
 </body>
 </html>
 EOF
 
-echo -e "${GRAY}Report saved as: $html_file${RESET}"
+echo -e "${GRAY}${REPORT_SAVED}: $html_file${RESET}"
 
-read -p "Open HTML report in browser? (y/n): " open_choice
+read -p "$HTML_PROMPT " open_choice
 if [[ "$open_choice" =~ ^[Yy]$ ]]; then
     open "$html_file"
 fi
