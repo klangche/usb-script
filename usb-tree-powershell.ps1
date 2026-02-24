@@ -544,7 +544,7 @@ $(foreach ($line in $originalStatusLines) {
 })
 
 <span class="cyan">$($Config.reporting.html.separator)</span>
-<span class="cyan">DEEP ANALYTICS SUMMARY</span>
+<span class="cyan">ANALYTICS SUMMARY</span>
 <span class="cyan">$($Config.reporting.html.separator)</span>
   $($Config.messages.en.mode):            $($mode.name)
   $($Config.messages.en.duration):        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
@@ -864,3 +864,4 @@ $eventHtml
 Write-Host ""
 Write-Host $Config.messages.en.exitPrompt -ForegroundColor (Get-Color "gray")
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
