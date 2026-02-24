@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - macOS Edition
+# USB TREE DIAGNOSTIC TOOL - macOS Edition (FINAL FIX)
 # =============================================================================
-# Uses ioreg -p IOUSB for accurate USB tree detection
+# Uses system_profiler (works without sudo) and ioreg (with sudo)
 # =============================================================================
 
 # Colors
@@ -20,26 +20,29 @@ echo -e "${GRAY}Platform: macOS $(sw_vers -productVersion 2>/dev/null) ($(uname 
 echo ""
 
 # =============================================================================
-# ASK FOR ADMIN - FIXED: Actually asks the question
+# ASK FOR ADMIN
 # =============================================================================
 USE_SUDO="n"
-if [ "$EUID" -ne 0 ]; then
+HAS_SUDO=false
+
+if [ "$EUID" -eq 0 ]; then
+    HAS_SUDO=true
+    echo -e "${GREEN}✓ Running with sudo privileges.${NC}"
+else
     echo -n "Run with sudo for maximum detail? (y/n): "
     read USE_SUDO
-    if [ "$USE_SUDO" = "y" ]; then
+    if [ "$USE_SUDO" = "y" ] || [ "$USE_SUDO" = "Y" ]; then
         echo -e "${YELLOW}Restarting with sudo...${NC}"
-        sudo "$0" "$@"
+        exec sudo "$0" "$@"
         exit $?
     else
-        echo -e "${YELLOW}Running without sudo.${NC}"
+        echo -e "${YELLOW}Running without sudo (using system_profiler).${NC}"
     fi
-else
-    echo -e "${GREEN}✓ Running with sudo privileges.${NC}"
 fi
 echo ""
 
 # =============================================================================
-# USB DEVICE ENUMERATION - Using ioreg
+# USB DEVICE ENUMERATION
 # =============================================================================
 DATE_STAMP=$(date +"%Y%m%d-%H%M%S")
 OUT_TXT="/tmp/usb-tree-report-$DATE_STAMP.txt"
@@ -53,28 +56,79 @@ MAX_HOPS=0
 HUBS=0
 DEVICES=0
 
-# Use ioreg to get USB tree
-ioreg_output=$(ioreg -p IOUSB -r -w 0 -l 2>/dev/null)
-
-# Process each line
-while IFS= read -r line; do
-    # Look for device entries
-    if [[ "$line" == *"+-o"* ]]; then
-        # Extract device name
-        if [[ "$line" =~ \+\-o\ ([^@<]+) ]]; then
-            device="${BASH_REMATCH[1]}"
-            device=$(echo "$device" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-            
-            # Skip if empty
-            if [ -z "$device" ]; then
-                continue
+# If we have sudo, use ioreg for detailed tree
+if [ "$EUID" -eq 0 ] || [ "$USE_SUDO" = "y" ]; then
+    echo -e "${GRAY}Using ioreg for detailed USB tree...${NC}"
+    
+    # Use ioreg with sudo to get full tree
+    ioreg_output=$(ioreg -p IOUSB -r -w 0 -l 2>/dev/null)
+    
+    # Process ioreg output
+    while IFS= read -r line; do
+        if [[ "$line" == *"+-o"* ]]; then
+            if [[ "$line" =~ \+\-o\ ([^@<]+) ]]; then
+                device="${BASH_REMATCH[1]}"
+                device=$(echo "$device" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                
+                if [ -n "$device" ]; then
+                    # Count pipes for level
+                    pipes=$(echo "$line" | grep -o "\|" | wc -l)
+                    level=$pipes
+                    
+                    # Build prefix
+                    prefix=""
+                    for ((i=0; i<level; i++)); do
+                        if [ $i -eq $((level-1)) ]; then
+                            prefix="${prefix}├── "
+                        else
+                            prefix="${prefix}│   "
+                        fi
+                    done
+                    
+                    # Check if hub
+                    if [[ "$device" == *"Hub"* ]] || [[ "$device" == *"HUB"* ]] || [[ "$device" == *"hub"* ]]; then
+                        TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device} [HUB] ← ${level} hops\n"
+                        HUBS=$((HUBS + 1))
+                    else
+                        TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device} ← ${level} hops\n"
+                        DEVICES=$((DEVICES + 1))
+                    fi
+                    
+                    [ $level -gt $MAX_HOPS ] && MAX_HOPS=$level
+                fi
             fi
-            
-            # Count pipes to determine level
-            pipes=$(echo "$line" | grep -o "\|" | wc -l)
-            level=$((pipes))
-            
-            # Build tree prefix
+        fi
+    done <<< "$ioreg_output"
+fi
+
+# If no devices found with ioreg OR we're not using sudo, use system_profiler
+if [ -z "$TREE_OUTPUT" ]; then
+    echo -e "${GRAY}Using system_profiler for USB tree...${NC}"
+    
+    # Get USB data from system_profiler
+    profiler_output=$(system_profiler SPUSBDataType 2>/dev/null)
+    
+    # Parse system_profiler output
+    level=0
+    while IFS= read -r line; do
+        # Skip empty lines and property lines
+        if [[ -z "$line" ]] || [[ "$line" == *":"*":"* ]] || [[ "$line" == *"Product ID:"* ]] || \
+           [[ "$line" == *"Vendor ID:"* ]] || [[ "$line" == *"Speed:"* ]] || \
+           [[ "$line" == *"Manufacturer:"* ]] || [[ "$line" == *"Location ID:"* ]] || \
+           [[ "$line" == *"Serial Number:"* ]]; then
+            continue
+        fi
+        
+        # Count leading spaces to determine level
+        indent_count=$(echo "$line" | sed -e 's/^\( *\).*/\1/' | wc -c)
+        indent_count=$((indent_count - 1))
+        level=$((indent_count / 2))
+        
+        # Extract device name
+        device_name=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/:[[:space:]]*$//')
+        
+        if [ -n "$device_name" ]; then
+            # Build prefix
             prefix=""
             for ((i=0; i<level; i++)); do
                 if [ $i -eq $((level-1)) ]; then
@@ -84,28 +138,24 @@ while IFS= read -r line; do
                 fi
             done
             
-            # Check if it's a hub
-            if [[ "$device" == *"Hub"* ]] || [[ "$device" == *"HUB"* ]] || [[ "$device" == *"hub"* ]]; then
-                TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device} [HUB] ← ${level} hops\n"
+            # Check if hub
+            if [[ "$device_name" == *"Hub"* ]] || [[ "$device_name" == *"HUB"* ]] || [[ "$device_name" == *"hub"* ]]; then
+                TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device_name} [HUB] ← ${level} hops\n"
                 HUBS=$((HUBS + 1))
             else
-                TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device} ← ${level} hops\n"
+                TREE_OUTPUT="${TREE_OUTPUT}${prefix}${device_name} ← ${level} hops\n"
                 DEVICES=$((DEVICES + 1))
             fi
             
-            # Update max hops
-            if [ $level -gt $MAX_HOPS ]; then
-                MAX_HOPS=$level
-            fi
+            [ $level -gt $MAX_HOPS ] && MAX_HOPS=$level
         fi
-    fi
-done <<< "$ioreg_output"
+    done <<< "$profiler_output"
+fi
 
-# If no devices found with ioreg, show what we got from ioreg for debugging
+# If STILL no devices, show message
 if [ -z "$TREE_OUTPUT" ]; then
     TREE_OUTPUT="├── No USB devices detected ← 0 hops\n"
-    echo -e "${YELLOW}Debug: ioreg output was:${NC}" >&2
-    echo "$ioreg_output" | head -20 >&2
+    echo -e "${YELLOW}No USB devices found. Make sure devices are connected.${NC}"
 fi
 
 NUM_TIERS=$((MAX_HOPS + 1))
@@ -248,72 +298,69 @@ echo -e "${GRAY}Report saved as: $OUT_TXT${NC}"
 # =============================================================================
 # HTML REPORT
 # =============================================================================
-# Create HTML file with heredoc (simpler, no syntax errors)
-cat > "$OUT_HTML" << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>USB Tree Report</title>
-    <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; font-family: 'Consolas', monospace; color: #e0e0e0; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
-    </style>
-</head>
-<body>
-<pre>
-EOF
-
-# Append dynamic content
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">USB TREE REPORT - $DATE_STAMP</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-echo "" >> "$OUT_HTML"
-echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g' >> "$OUT_HTML"
-echo "" >> "$OUT_HTML"
-echo "<span class=\"gray\">Furthest jumps: $MAX_HOPS</span>" >> "$OUT_HTML"
-echo "<span class=\"gray\">Number of tiers: $NUM_TIERS</span>" >> "$OUT_HTML"
-echo "<span class=\"gray\">Total devices: $DEVICES</span>" >> "$OUT_HTML"
-echo "<span class=\"gray\">Total hubs: $HUBS</span>" >> "$OUT_HTML"
-echo "" >> "$OUT_HTML"
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-
-# Add platform status lines
-while IFS= read -r line; do
-    if [ -n "$line" ]; then
-        if [[ "$line" == *"STABLE"* ]]; then
-            echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"green\">STABLE</span>" >> "$OUT_HTML"
-        elif [[ "$line" == *"POTENTIALLY UNSTABLE"* ]]; then
-            echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"yellow\">POTENTIALLY UNSTABLE</span>" >> "$OUT_HTML"
-        elif [[ "$line" == *"NOT STABLE"* ]]; then
-            echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"magenta\">NOT STABLE</span>" >> "$OUT_HTML"
+# Create HTML file
+{
+    echo "<!DOCTYPE html>"
+    echo "<html>"
+    echo "<head>"
+    echo "    <title>USB Tree Report</title>"
+    echo "    <style>"
+    echo "        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', monospace; padding: 20px; font-size: 14px; }"
+    echo "        pre { margin: 0; font-family: 'Consolas', monospace; color: #e0e0e0; white-space: pre; }"
+    echo "        .cyan { color: #00ffff; }"
+    echo "        .green { color: #00ff00; }"
+    echo "        .yellow { color: #ffff00; }"
+    echo "        .magenta { color: #ff00ff; }"
+    echo "        .gray { color: #c0c0c0; }"
+    echo "    </style>"
+    echo "</head>"
+    echo "<body>"
+    echo "<pre>"
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    echo "<span class=\"cyan\">USB TREE REPORT - $DATE_STAMP</span>"
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    echo ""
+    echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g'
+    echo ""
+    echo "<span class=\"gray\">Furthest jumps: $MAX_HOPS</span>"
+    echo "<span class=\"gray\">Number of tiers: $NUM_TIERS</span>"
+    echo "<span class=\"gray\">Total devices: $DEVICES</span>"
+    echo "<span class=\"gray\">Total hubs: $HUBS</span>"
+    echo ""
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    echo "<span class=\"cyan\">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>"
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    
+    # Add platform status lines
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            if [[ "$line" == *"STABLE"* ]]; then
+                echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"green\">STABLE</span>"
+            elif [[ "$line" == *"POTENTIALLY UNSTABLE"* ]]; then
+                echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"yellow\">POTENTIALLY UNSTABLE</span>"
+            elif [[ "$line" == *"NOT STABLE"* ]]; then
+                echo "  <span class=\"gray\">$(echo "$line" | cut -c1-25)</span> <span class=\"magenta\">NOT STABLE</span>"
+            fi
         fi
+    done <<< "$STATUS_SUMMARY"
+    
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    echo "<span class=\"cyan\">HOST SUMMARY</span>"
+    echo "<span class=\"cyan\">==============================================================================</span>"
+    
+    if [ "$HOST_STATUS" = "STABLE" ]; then
+        echo "  <span class=\"gray\">Host status:     </span><span class=\"green\">$HOST_STATUS</span>"
+    elif [ "$HOST_STATUS" = "POTENTIALLY UNSTABLE" ]; then
+        echo "  <span class=\"gray\">Host status:     </span><span class=\"yellow\">$HOST_STATUS</span>"
+    else
+        echo "  <span class=\"gray\">Host status:     </span><span class=\"magenta\">$HOST_STATUS</span>"
     fi
-done <<< "$STATUS_SUMMARY"
-
-# Add host summary
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">HOST SUMMARY</span>" >> "$OUT_HTML"
-echo "<span class=\"cyan\">==============================================================================</span>" >> "$OUT_HTML"
-
-if [ "$HOST_STATUS" = "STABLE" ]; then
-    echo "  <span class=\"gray\">Host status:     </span><span class=\"green\">$HOST_STATUS</span>" >> "$OUT_HTML"
-elif [ "$HOST_STATUS" = "POTENTIALLY UNSTABLE" ]; then
-    echo "  <span class=\"gray\">Host status:     </span><span class=\"yellow\">$HOST_STATUS</span>" >> "$OUT_HTML"
-else
-    echo "  <span class=\"gray\">Host status:     </span><span class=\"magenta\">$HOST_STATUS</span>" >> "$OUT_HTML"
-fi
-
-echo "  <span class=\"gray\">Stability Score: </span><span class=\"gray\">$STABILITY_SCORE/10</span>" >> "$OUT_HTML"
-echo "</pre>" >> "$OUT_HTML"
-echo "</body>" >> "$OUT_HTML"
-echo "</html>" >> "$OUT_HTML"
+    
+    echo "  <span class=\"gray\">Stability Score: </span><span class=\"gray\">$STABILITY_SCORE/10</span>"
+    echo "</pre>"
+    echo "</body>"
+    echo "</html>"
+} > "$OUT_HTML"
 
 echo -e "${GRAY}HTML report saved as: $OUT_HTML${NC}"
 
