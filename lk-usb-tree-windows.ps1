@@ -1,11 +1,7 @@
 # =============================================================================
 # USB TREE DIAGNOSTIC TOOL - Universal Launcher
 # =============================================================================
-# Detects OS and runs appropriate version:
-# - Windows: Full PowerShell version with deep analytics
-# - Linux/macOS with bash: Downloads and runs bash version
-# - Others: Basic mode
-#
+# Detects OS and runs appropriate version
 # Usage: irm https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-windows.ps1 | iex
 # =============================================================================
 
@@ -39,12 +35,10 @@ elseif ($hasBash) {
     Write-Host ""
     Write-Host "Downloading and running appropriate script..." -ForegroundColor Gray
     
-    # Try macOS first, fall back to Linux
     if (Get-Command curl -ErrorAction SilentlyContinue) {
-        # Try macOS script
+        # Try macOS script first, fall back to Linux
         $result = bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh 2>/dev/null | bash 2>/dev/null"
         if ($LASTEXITCODE -ne 0) {
-            # Fall back to Linux script
             bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
         }
     } else {
