@@ -1,6 +1,6 @@
   
 # Linus USB Tree Diagnostic Tool
-![Version](https://img.shields.io/badge/version-0.5.6-blue)
+![Version](https://img.shields.io/badge/version-0.6.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
