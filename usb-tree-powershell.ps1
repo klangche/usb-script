@@ -122,7 +122,7 @@ function Print-Tree {
     $node = $map[$id]
     if (-not $node) { return }
     
-    $branch = if ($level -eq 0) { "└── " } else { $prefix + $(if ($isLast) { "└── " } else { "├── " }) }
+    $branch = if ($level -eq 0) { "├── " } else { $prefix + $(if ($isLast) { "└── " } else { "├── " }) }
     
     # Mark hubs with [HUB] for clarity
     $displayName = if ($node.IsHub) { "$($node.Name) [HUB]" } else { $node.Name }
@@ -317,7 +317,7 @@ $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -eq 'y') { Start-Process $outHtml }
 
 # =============================================================================
-# DEEP ANALYTICS - Clean terminal view
+# DEEP ANALYTICS - Clean terminal view (FIXED)
 # =============================================================================
 if ($isElevated) {
     Write-Host ""
@@ -540,8 +540,19 @@ $eventHtml</pre>
             
             $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
             if ($openDeep -eq 'y') { Start-Process $deepHtml }
+            
+            Write-Host ""
+            Write-Host "Press any key to exit..." -ForegroundColor Gray
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         }
     } else {
         Write-Host "Deep Analytics skipped." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "Press any key to exit..." -ForegroundColor Gray
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
+} else {
+    Write-Host ""
+    Write-Host "Press any key to exit..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
