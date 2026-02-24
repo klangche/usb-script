@@ -151,9 +151,9 @@
       "adminYes": "Relaunching as admin...",
       "adminNo": "Running without admin",
       "adminAlready": "✓ Running with administrator privileges",
-      "deepPrompt": "Run deep analytics / stability monitoring? (y/n)",
+      "deepPrompt": "Run analytics / stability monitoring? (y/n)",
       "htmlPrompt": "Open HTML report? (y/n)",
-      "deepLogPrompt": "Open Deep Analytics HTML report? (y/n)",
+      "deepLogPrompt": "Open Analytics HTML report? (y/n)",
       "exitPrompt": "Press any key to exit...",
       "enumerating": "Enumerating USB devices...",
       "found": "Found",
@@ -167,8 +167,8 @@
       "stabilityScore": "Stability Score",
       "reportSaved": "Report saved as",
       "htmlSaved": "HTML report saved as",
-      "deepStarted": "STARTING DEEP ANALYTICS",
-      "deepComplete": "DEEP ANALYTICS COMPLETE",
+      "deepStarted": "STARTING ANALYTICS",
+      "deepComplete": "ANALYTICS COMPLETE",
       "mode": "Mode",
       "duration": "Duration",
       "finalStatus": "Final status",
@@ -186,7 +186,7 @@
 
   "analytics": {
     "basic": {
-      "name": "Basic Deep Analytics",
+      "name": "Basic Analytics",
       "description": "Re-handshakes / disconnects only",
       "counters": ["rehandshake"],
       "headerColor": "cyan",
