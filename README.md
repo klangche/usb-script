@@ -19,11 +19,15 @@ Windows:
 irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
 ```
 
-Mac & Linux
+OSX
 ```Terminal
 curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.sh | bash
 ```
 
+Linux
+```Terminal
+curl -sSL https://raw.githubusercontent.com/yourname/usb-script/main/lk-usb-tree-linux.sh | bash
+```
 Paste above command into **PowerShell** or **Terminal**
 
 
