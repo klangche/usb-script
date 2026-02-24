@@ -63,9 +63,6 @@ if command -v system_profiler &> /dev/null; then
     USB_DATA=$(system_profiler SPUSBDataType 2>/dev/null)
     
     # Parse the tree structure
-    CURRENT_LEVEL=0
-    PREV_INDENT=0
-    
     while IFS= read -r line; do
         # Skip empty lines
         if [[ -z "$line" ]]; then
@@ -103,9 +100,9 @@ if command -v system_profiler &> /dev/null; then
             is_hub=false
             if [[ "$device_name" == *"Hub"* ]] || [[ "$device_name" == *"HUB"* ]] || [[ "$device_name" == *"hub"* ]]; then
                 is_hub=true
-                ((HUBS++))
+                HUBS=$((HUBS + 1))
             else
-                ((DEVICES++))
+                DEVICES=$((DEVICES + 1))
             fi
             
             # Build tree prefixes
@@ -135,13 +132,10 @@ if command -v system_profiler &> /dev/null; then
             fi
         fi
     done <<< "$USB_DATA"
-else
-    TREE_OUTPUT="├── No USB devices found ← 0 hops\n"
-    MAX_HOPS=0
 fi
 
 # If no devices found, set defaults
-if [ $HUBS -eq 0 ] && [ $DEVICES -eq 0 ]; then
+if [ -z "$TREE_OUTPUT" ]; then
     TREE_OUTPUT="├── No USB devices detected ← 0 hops\n"
     MAX_HOPS=0
     DEVICES=0
@@ -260,7 +254,7 @@ echo -e "${GRAY}Report saved as: $OUT_TXT${NC}"
 # =============================================================================
 # HTML REPORT - FIXED: Each platform on its own line
 # =============================================================================
-# Build HTML platform lines - EACH ON ITS OWN LINE with explicit <br> or newline
+# Build HTML platform lines - EACH ON ITS OWN LINE
 PLATFORM_HTML=""
 while IFS='|' read plat status; do
     if [ -n "$plat" ] && [ -n "$status" ]; then
@@ -269,7 +263,6 @@ while IFS='|' read plat status; do
             "POTENTIALLY UNSTABLE") color="yellow" ;;
             "NOT STABLE") color="magenta" ;;
         esac
-        # Use actual newlines in the HTML content
         PLATFORM_HTML="${PLATFORM_HTML}  <span class='gray'>$(printf "%-25s" "$plat")</span> <span class='$color'>$status</span>\n"
     fi
 done < <(echo -e "$STATUS_LINES" | grep -v '^$')
@@ -287,7 +280,7 @@ else
 fi
 
 # Clean tree output of ANSI codes for HTML
-CLEAN_TREE=$(echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g' | sed 's/←/←/g')
+CLEAN_TREE=$(echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g')
 
 HTML_CONTENT="<!DOCTYPE html>
 <html>
@@ -345,12 +338,12 @@ echo "$HTML_CONTENT" > "$OUT_HTML"
 echo -e "${GRAY}HTML report saved as: $OUT_HTML${NC}"
 
 # =============================================================================
-# ASK TO OPEN BROWSER - FIXED: Now properly asks after script is done
+# ASK TO OPEN BROWSER - FIXED: Proper syntax
 # =============================================================================
 echo ""
 echo -n "Open HTML report in browser? (y/n): "
-read OPEN_HTML
-if [ "$OPEN_HTML" = "y" ]; then
+read open_choice
+if [ "$open_choice" = "y" ]; then
     open "$OUT_HTML" 2>/dev/null || echo -e "${YELLOW}Could not open browser. File saved at: $OUT_HTML${NC}"
 fi
 
