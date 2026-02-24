@@ -4,8 +4,6 @@
 # =============================================================================
 # This script launches the USB diagnostic tool on macOS and Linux
 # It automatically detects the platform and uses the appropriate method
-#
-# Zero-footprint: Everything runs in memory
 # =============================================================================
 
 # Colors for output
@@ -40,25 +38,25 @@ echo -e "${GRAY}Zero-footprint mode: Everything runs in memory${NC}"
 echo -e "${CYAN}==============================================================================${NC}"
 echo ""
 
-# Download and run the appropriate script
+# Download and run the appropriate script with interactive mode
 if [ "$PLATFORM" = "macOS" ]; then
     echo -e "${GREEN}Running macOS version...${NC}"
     echo -e "${GRAY}(Script loads directly in memory via pipe, nothing saved)${NC}"
     echo ""
-    curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-macos.sh | bash
+    # Use process substitution to maintain interactive mode
+    bash <(curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-macos.sh)
 elif [ "$PLATFORM" = "Linux" ]; then
     echo -e "${GREEN}Running Linux version...${NC}"
     echo -e "${GRAY}(Script loads directly in memory via pipe, nothing saved)${NC}"
     echo ""
-    curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-linux.sh | bash
+    bash <(curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-linux.sh)
 else
     echo -e "${YELLOW}Unknown platform. Attempting to run generic USB scan...${NC}"
     echo ""
-    # Try both methods
     if command -v system_profiler &> /dev/null; then
-        curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-macos.sh | bash
+        bash <(curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-macos.sh)
     elif command -v lsusb &> /dev/null; then
-        curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-linux.sh | bash
+        bash <(curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-linux.sh)
     else
         echo -e "${YELLOW}No compatible USB tool found.${NC}"
         exit 1
