@@ -65,9 +65,6 @@ if command -v system_profiler &> /dev/null; then
     # Parse the tree structure
     CURRENT_LEVEL=0
     PREV_INDENT=0
-    HUBS=0
-    DEVICES=0
-    MAX_HOPS=0
     
     while IFS= read -r line; do
         # Skip empty lines
@@ -96,7 +93,9 @@ if command -v system_profiler &> /dev/null; then
                [[ "$device_name" == *"Speed:"* ]] || [[ "$device_name" == *"Manufacturer:"* ]] || \
                [[ "$device_name" == *"Location ID:"* ]] || [[ "$device_name" == *"Current Available:"* ]] || \
                [[ "$device_name" == *"Current Required:"* ]] || [[ "$device_name" == *"Extra Operating Current:"* ]] || \
-               [[ "$device_name" == *"Built-In:"* ]]; then
+               [[ "$device_name" == *"Built-In:"* ]] || [[ "$device_name" == *"Serial Number:"* ]] || \
+               [[ "$device_name" == *"Capacity:"* ]] || [[ "$device_name" == *"Removable Media:"* ]] || \
+               [[ "$device_name" == *"BSD Name:"* ]] || [[ "$device_name" == *"Partition Type:"* ]]; then
                 continue
             fi
             
@@ -180,11 +179,13 @@ while IFS='|' read plat rec max; do
     STATUS_LINES="${STATUS_LINES}${plat}|${status}\n"
 done < /tmp/platform_status.txt
 
-# Format for terminal
+# Format for terminal - EACH ON ITS OWN LINE
 STATUS_SUMMARY=""
 while IFS='|' read plat status; do
-    printf -v padded "%-25s" "$plat"
-    STATUS_SUMMARY="${STATUS_SUMMARY}${padded} ${status}\n"
+    if [ -n "$plat" ] && [ -n "$status" ]; then
+        printf -v padded "%-25s" "$plat"
+        STATUS_SUMMARY="${STATUS_SUMMARY}${padded} ${status}\n"
+    fi
 done < <(echo -e "$STATUS_LINES" | grep -v '^$')
 
 # Determine host status (based on Mac Apple Silicon)
@@ -257,17 +258,20 @@ echo ""
 echo -e "${GRAY}Report saved as: $OUT_TXT${NC}"
 
 # =============================================================================
-# HTML REPORT
+# HTML REPORT - FIXED: Each platform on its own line
 # =============================================================================
-# Build HTML platform lines
+# Build HTML platform lines - EACH ON ITS OWN LINE with explicit <br> or newline
 PLATFORM_HTML=""
 while IFS='|' read plat status; do
-    case "$status" in
-        "STABLE") color="green" ;;
-        "POTENTIALLY UNSTABLE") color="yellow" ;;
-        "NOT STABLE") color="magenta" ;;
-    esac
-    PLATFORM_HTML="${PLATFORM_HTML}  <span class='gray'>$(printf "%-25s" "$plat")</span> <span class='$color'>$status</span>\r\n"
+    if [ -n "$plat" ] && [ -n "$status" ]; then
+        case "$status" in
+            "STABLE") color="green" ;;
+            "POTENTIALLY UNSTABLE") color="yellow" ;;
+            "NOT STABLE") color="magenta" ;;
+        esac
+        # Use actual newlines in the HTML content
+        PLATFORM_HTML="${PLATFORM_HTML}  <span class='gray'>$(printf "%-25s" "$plat")</span> <span class='$color'>$status</span>\n"
+    fi
 done < <(echo -e "$STATUS_LINES" | grep -v '^$')
 
 # Convert color codes to HTML class names
@@ -281,6 +285,9 @@ elif [[ "$HOST_COLOR" == *"35m"* ]]; then
 else
     HOST_COLOR_HTML="gray"
 fi
+
+# Clean tree output of ANSI codes for HTML
+CLEAN_TREE=$(echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g' | sed 's/←/←/g')
 
 HTML_CONTENT="<!DOCTYPE html>
 <html>
@@ -310,25 +317,26 @@ HTML_CONTENT="<!DOCTYPE html>
 </head>
 <body>
 <pre>
-<span class=\"cyan\">==============================================================================</span>
-<span class=\"cyan\">USB TREE REPORT - $DATE_STAMP</span>
-<span class=\"cyan\">==============================================================================</span>
+<span class="cyan">==============================================================================</span>
+<span class="cyan">USB TREE REPORT - $DATE_STAMP</span>
+<span class="cyan">==============================================================================</span>
 
-$(echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g')
+$CLEAN_TREE
 
-<span class=\"gray\">Furthest jumps: $MAX_HOPS</span>
-<span class=\"gray\">Number of tiers: $NUM_TIERS</span>
-<span class=\"gray\">Total devices: $DEVICES</span>
-<span class=\"gray\">Total hubs: $HUBS</span>
+<span class="gray">Furthest jumps: $MAX_HOPS</span>
+<span class="gray">Number of tiers: $NUM_TIERS</span>
+<span class="gray">Total devices: $DEVICES</span>
+<span class="gray">Total hubs: $HUBS</span>
 
-<span class=\"cyan\">==============================================================================</span>
-<span class=\"cyan\">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>
-<span class=\"cyan\">==============================================================================</span>
-$PLATFORM_HTML<span class=\"cyan\">==============================================================================</span>
-<span class=\"cyan\">HOST SUMMARY</span>
-<span class=\"cyan\">==============================================================================</span>
-  <span class='gray'>Host status:     </span><span class='$HOST_COLOR_HTML'>$HOST_STATUS</span>
-  <span class='gray'>Stability Score: </span><span class='gray'>$STABILITY_SCORE/10</span>
+<span class="cyan">==============================================================================</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>
+<span class="cyan">==============================================================================</span>
+$(echo -e "$PLATFORM_HTML")
+<span class="cyan">==============================================================================</span>
+<span class="cyan">HOST SUMMARY</span>
+<span class="cyan">==============================================================================</span>
+  <span class="gray">Host status:     </span><span class="$HOST_COLOR_HTML">$HOST_STATUS</span>
+  <span class="gray">Stability Score: </span><span class="gray">$STABILITY_SCORE/10</span>
 </pre>
 </body>
 </html>"
@@ -336,6 +344,10 @@ $PLATFORM_HTML<span class=\"cyan\">=============================================
 echo "$HTML_CONTENT" > "$OUT_HTML"
 echo -e "${GRAY}HTML report saved as: $OUT_HTML${NC}"
 
+# =============================================================================
+# ASK TO OPEN BROWSER - FIXED: Now properly asks after script is done
+# =============================================================================
+echo ""
 echo -n "Open HTML report in browser? (y/n): "
 read OPEN_HTML
 if [ "$OPEN_HTML" = "y" ]; then
