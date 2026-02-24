@@ -1,29 +1,40 @@
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition v1.0.0
+# USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition
 # =============================================================================
-# - Runs tree visualization + HTML report
-# - After that, prompts for deep analytics (y/n)
-# - No admin → basic deep analytics (re-handshakes only)
-# - Admin → deeper analytics (CRC, resets, overcurrent, re-handshakes + more)
+# Uses centralized JSON configuration
 # =============================================================================
 
-$scriptVersion = "1.0.0"
+# Load configuration
+try {
+    $config = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-config.json"
+    $scriptVersion = $config.version
+} catch {
+    Write-Host "Failed to load configuration. Using defaults." -ForegroundColor Yellow
+    # Fallback defaults if JSON unavailable
+    $scriptVersion = "2.0.0"
+}
 
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "USB TREE DIAGNOSTIC TOOL - WINDOWS EDITION v$scriptVersion" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
+$cyanColor = if ($config) { $config.colors.cyan } else { "Cyan" }
+$grayColor = if ($config) { $config.colors.gray } else { "Gray" }
+$greenColor = if ($config) { $config.colors.green } else { "Green" }
+$yellowColor = if ($config) { $config.colors.yellow } else { "Yellow" }
+$magentaColor = if ($config) { $config.colors.magenta } else { "Magenta" }
+
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
+Write-Host "$($config.metadata.toolName) - WINDOWS EDITION v$scriptVersion" -ForegroundColor $cyanColor
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
+Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" -ForegroundColor $grayColor
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Admin check + smart handling
+# Admin check
 # ─────────────────────────────────────────────────────────────────────────────
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    $adminChoice = Read-Host "Run with admin for maximum detail (full tree + deeper analytics)? (y/n)"
+    $adminChoice = Read-Host $config.messages.adminPrompt
     if ($adminChoice -match '^[Yy]') {
-        Write-Host "Relaunching as admin..." -ForegroundColor Yellow
+        Write-Host $config.messages.adminYes -ForegroundColor $yellowColor
         
         $scriptPath = $MyInvocation.MyCommand.Path
         if (-not $scriptPath) {
@@ -35,37 +46,37 @@ if (-not $isAdmin) {
         Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
         exit
     } else {
-        Write-Host "Running without admin (basic tree + basic deep if selected)" -ForegroundColor Yellow
+        Write-Host $config.messages.adminNo -ForegroundColor $yellowColor
     }
 } else {
-    Write-Host "✓ Running with admin privileges → full deep analytics available" -ForegroundColor Green
+    Write-Host $config.messages.adminAlready -ForegroundColor $greenColor
 }
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PART 1: USB TREE ENUMERATION AND REPORTING
+# PART 1: USB TREE ENUMERATION
 # ─────────────────────────────────────────────────────────────────────────────
 $dateStamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outTxt = "$env:TEMP\usb-tree-report-$dateStamp.txt"
 $outHtml = "$env:TEMP\usb-tree-report-$dateStamp.html"
 
-Write-Host "Enumerating USB devices..." -ForegroundColor Gray
+Write-Host $config.messages.enumerating -ForegroundColor $grayColor
 
 $allDevices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, FriendlyName, Name, Class, @{n='IsHub';e={
     ($_.FriendlyName -like "*hub*") -or ($_.Name -like "*hub*") -or ($_.Class -eq "USBHub") -or ($_.InstanceId -like "*HUB*")
 }}
 
 if ($allDevices.Count -eq 0) {
-    Write-Host "No USB devices found." -ForegroundColor Yellow
+    Write-Host $config.messages.noDevices -ForegroundColor $yellowColor
     exit
 }
 
 $devices = $allDevices | Where-Object { -not $_.IsHub }
 $hubs = $allDevices | Where-Object { $_.IsHub }
 
-Write-Host "Found $($devices.Count) devices and $($hubs.Count) hubs" -ForegroundColor Gray
+Write-Host ($config.messages.found -f $devices.Count, $hubs.Count) -ForegroundColor $grayColor
 
-# Build map for hierarchy
+# Build map for hierarchy (same as before)
 $map = @{}
 foreach ($d in $allDevices) {
     try {
@@ -137,32 +148,35 @@ foreach ($root in $roots) {
 $numTiers = $maxHops + 1
 $totalHubs = $hubs.Count
 $totalDevices = $devices.Count
-$baseStabilityScore = [Math]::Max(1, 9 - $maxHops)
 
-# Platform stability table
-$platforms = @{
-    "Windows"                  = @{rec=5; max=7}
-    "Linux"                    = @{rec=4; max=6}
-    "Mac Intel"                = @{rec=5; max=7}
-    "Mac Apple Silicon"        = @{rec=3; max=5}
-    "iPad USB-C (M-series)"    = @{rec=2; max=4}
-    "iPhone USB-C"             = @{rec=2; max=4}
-    "Android Phone (Qualcomm)" = @{rec=3; max=5}
-    "Android Tablet (Exynos)"  = @{rec=2; max=4}
-}
+# Calculate base score from config
+$baseScore = [Math]::Max($config.scoring.minScore, (9 - $maxHops))
 
+# Build platform stability using config
 $statusLines = @()
-foreach ($plat in $platforms.Keys) {
-    $rec = $platforms[$plat].rec
-    $max = $platforms[$plat].max
-    $status = if ($numTiers -le $rec) { "STABLE" } 
-              elseif ($numTiers -le $max) { "POTENTIALLY UNSTABLE" } 
-              else { "NOT STABLE" }
-    $statusLines += [PSCustomObject]@{ Platform = $plat; Status = $status }
-}
+$order = @("windows", "windowsArm", "linux", "linuxArm", "macIntel", "macAppleSilicon", "ipad", "iphone", "androidPhone", "androidTablet")
 
-$order = @("Windows", "Linux", "Mac Intel", "Mac Apple Silicon", "iPad USB-C (M-series)", "iPhone USB-C", "Android Phone (Qualcomm)", "Android Tablet (Exynos)")
-$statusLines = $statusLines | Sort-Object { $order.IndexOf($_.Platform) }
+foreach ($platformKey in $order) {
+    if ($config.platforms.$platformKey) {
+        $plat = $config.platforms.$platformKey
+        $rec = $plat.rec
+        $max = $plat.max
+        
+        if ($numTiers -le $rec) {
+            $status = "STABLE"
+        } elseif ($numTiers -le $max) {
+            $status = "POTENTIALLY UNSTABLE"
+        } else {
+            $status = "NOT STABLE"
+        }
+        
+        $statusLines += [PSCustomObject]@{ 
+            Platform = $plat.name
+            Status = $status
+            Key = $platformKey
+        }
+    }
+}
 
 $maxPlatLen = ($statusLines.Platform | Measure-Object Length -Maximum).Maximum
 $statusSummaryTerminal = ""
@@ -172,33 +186,39 @@ foreach ($line in $statusLines) {
 }
 
 # Host status follows Apple Silicon
-$appleSiliconStatus = ($statusLines | Where-Object { $_.Platform -eq "Mac Apple Silicon" }).Status
+$appleSiliconStatus = ($statusLines | Where-Object { $_.Key -eq "macAppleSilicon" }).Status
 $hostStatus = $appleSiliconStatus
-$hostColor = if ($hostStatus -eq "STABLE") { "Green" } elseif ($hostStatus -eq "POTENTIALLY UNSTABLE") { "Yellow" } else { "Magenta" }
+$hostColor = if ($hostStatus -eq "STABLE") { 
+    $config.colors.green
+} elseif ($hostStatus -eq "POTENTIALLY UNSTABLE") { 
+    $config.colors.yellow
+} else { 
+    $config.colors.magenta
+}
 
 # Console output
 Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "USB TREE" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
+Write-Host "USB TREE" -ForegroundColor $cyanColor
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
 Write-Host $treeOutput
 Write-Host ""
-Write-Host "Furthest jumps: $maxHops" -ForegroundColor Gray
-Write-Host "Number of tiers: $numTiers" -ForegroundColor Gray
-Write-Host "Total devices: $totalDevices" -ForegroundColor Gray
-Write-Host "Total hubs: $totalHubs" -ForegroundColor Gray
+Write-Host "Furthest jumps: $maxHops" -ForegroundColor $grayColor
+Write-Host "Number of tiers: $numTiers" -ForegroundColor $grayColor
+Write-Host "Total devices: $totalDevices" -ForegroundColor $grayColor
+Write-Host "Total hubs: $totalHubs" -ForegroundColor $grayColor
 Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "STABILITY PER PLATFORM (based on $maxHops hops)" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
+Write-Host "STABILITY PER PLATFORM (based on $maxHops hops)" -ForegroundColor $cyanColor
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
 Write-Host $statusSummaryTerminal
 Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "HOST SUMMARY" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
+Write-Host "HOST SUMMARY" -ForegroundColor $cyanColor
+Write-Host $config.messages.separator -ForegroundColor $cyanColor
 Write-Host "Host status: " -NoNewline
 Write-Host "$hostStatus" -ForegroundColor $hostColor
-Write-Host "Stability Score: $baseStabilityScore/10" -ForegroundColor Gray
+Write-Host "Stability Score: $baseScore/10" -ForegroundColor $grayColor
 Write-Host ""
 
 # Save text report
@@ -215,32 +235,32 @@ Total hubs: $totalHubs
 STABILITY SUMMARY
 $statusSummaryTerminal
 
-HOST STATUS: $hostStatus (Score: $baseStabilityScore/10)
+HOST STATUS: $hostStatus (Score: $baseScore/10)
 "@
 $txtReport | Out-File $outTxt
-Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
+Write-Host "$($config.messages.textSaved) $outTxt" -ForegroundColor $grayColor
 
-# Generate HTML report
+# Generate HTML report using config colors
 $htmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
     <title>USB Tree Report - $dateStamp</title>
     <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
+        body { background: $($config.reporting.html.backgroundColor); color: $($config.reporting.html.textColor); font-family: $($config.reporting.html.fontFamily); padding: 20px; font-size: 14px; }
         pre { margin: 0; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
+        .cyan { color: $($config.colors.cyan); }
+        .green { color: $($config.colors.green); }
+        .yellow { color: $($config.colors.yellow); }
+        .magenta { color: $($config.colors.magenta); }
+        .gray { color: $($config.colors.gray); }
     </style>
 </head>
 <body>
 <pre>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">USB TREE REPORT - $dateStamp</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 
 $treeOutput
 
@@ -249,38 +269,38 @@ $treeOutput
 <span class="gray">Total devices: $totalDevices</span>
 <span class="gray">Total hubs: $totalHubs</span>
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 $(foreach ($line in $statusLines) {
     $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
     "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
 })
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">HOST SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  <span class='gray'>Host status:     </span><span class='$($hostColor.ToLower())'>$hostStatus</span>
-  <span class='gray'>Stability Score: </span><span class='gray'>$baseStabilityScore/10</span>
+<span class="cyan">$($config.messages.separator)</span>
+  <span class='gray'>Host status:     </span><span class='$(if ($hostStatus -eq "STABLE") { "green" } elseif ($hostStatus -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" })'>$hostStatus</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$baseScore/10</span>
 </pre>
 </body>
 </html>
 "@
 $htmlContent | Out-File $outHtml -Encoding UTF8
-Write-Host "HTML report saved as: $outHtml" -ForegroundColor Gray
+Write-Host "$($config.messages.htmlSaved) $outHtml" -ForegroundColor $grayColor
 
 # Prompt to open HTML
-$openHtml = Read-Host "Open HTML report? (y/n)"
+$openHtml = Read-Host $config.messages.htmlPrompt
 if ($openHtml -eq 'y') { Start-Process $outHtml }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PART 2: DEEP ANALYTICS PROMPT
 # ─────────────────────────────────────────────────────────────────────────────
 Write-Host ""
-$wantDeep = Read-Host "Run deep analytics / stability monitoring? (y/n)"
+$wantDeep = Read-Host $config.messages.deepPrompt
 if ($wantDeep -notmatch '^[Yy]') {
-    Write-Host "Deep analytics skipped." -ForegroundColor Gray
-    Write-Host "Press any key to exit..." -ForegroundColor Gray
+    Write-Host $config.messages.deepSkipped -ForegroundColor $grayColor
+    Write-Host $config.messages.exitPrompt -ForegroundColor $grayColor
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     exit
 }
@@ -291,13 +311,10 @@ if ($wantDeep -notmatch '^[Yy]') {
 $deepLog = "$env:TEMP\usb-deep-log-$dateStamp.txt"
 $deepHtml = "$env:TEMP\usb-deep-report-$dateStamp.html"
 
-# Initialize common counters
+# Initialize counters
 $script:StartTime = Get-Date
 $script:IsStable = $true
 $script:Rehandshakes = 0
-$script:InitialDeviceCount = $devices.Count
-
-# Initialize deeper counters
 $script:CRCFailures = 0
 $script:BusResets = 0
 $script:Overcurrent = 0
@@ -317,9 +334,10 @@ foreach ($dev in (Get-PnpDevice -Class USB | Where-Object { $_.Status -eq 'OK' }
     $initialDevices[$dev.InstanceId] = $name
 }
 
-Write-EventLog -Type "INFO" -Message "Deep Analytics started - Mode: $(if ($isAdmin) { 'DEEPER' } else { 'BASIC' })" -Device ""
+$mode = if ($isAdmin) { "DEEPER" } else { "BASIC" }
+Write-EventLog -Type "INFO" -Message "Deep Analytics started - Mode: $mode" -Device ""
 
-# Store original data for final display
+# Store original data
 $originalTreeOutput = $treeOutput
 $originalMaxHops = $maxHops
 $originalNumTiers = $numTiers
@@ -328,19 +346,19 @@ $originalTotalHubs = $totalHubs
 $originalStatusLines = $statusLines
 $originalHostStatus = $hostStatus
 $originalHostColor = $hostColor
-$originalBaseScore = $baseStabilityScore
+$originalBaseScore = $baseScore
 
 if (-not $isAdmin) {
     # =========================================================================
     # BASIC DEEP ANALYTICS
     # =========================================================================
     Write-Host ""
-    Write-Host "==============================================================================" -ForegroundColor Cyan
-    Write-Host "STARTING BASIC DEEP ANALYTICS" -ForegroundColor Cyan
-    Write-Host "==============================================================================" -ForegroundColor Cyan
-    Write-Host "Mode: Basic (re-handshakes / disconnects only)" -ForegroundColor Yellow
-    Write-Host "Log: $deepLog" -ForegroundColor Gray
-    Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
+    Write-Host $config.messages.separator -ForegroundColor $cyanColor
+    Write-Host $config.messages.startingBasic -ForegroundColor $cyanColor
+    Write-Host $config.messages.separator -ForegroundColor $cyanColor
+    Write-Host $config.messages.modeBasic -ForegroundColor $yellowColor
+    Write-Host "Log: $deepLog" -ForegroundColor $grayColor
+    Write-Host $config.messages.pressCtrlC -ForegroundColor $grayColor
     Write-Host ""
     
     $previousDevices = $initialDevices.Clone()
@@ -376,35 +394,35 @@ if (-not $isAdmin) {
             
             Clear-Host
             
-            # Show ONLY deep analytics during monitoring
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "BASIC DEEP ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor Cyan
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
+            # Show ONLY deep analytics
+            Write-Host $config.messages.separator -ForegroundColor $cyanColor
+            Write-Host "BASIC DEEP ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor $cyanColor
+            Write-Host $config.messages.separator -ForegroundColor $cyanColor
+            Write-Host $config.messages.pressCtrlC -ForegroundColor $grayColor
             Write-Host ""
             
-            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+            $statusColor = if ($script:IsStable) { $config.colors.green } else { $config.colors.magenta }
             $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
             
             Write-Host "STATUS: " -NoNewline
             Write-Host "$statusText" -ForegroundColor $statusColor
             Write-Host ""
             Write-Host "RE-HANDSHAKES: " -NoNewline
-            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { $config.colors.yellow } else { $config.colors.gray })
             Write-Host ""
-            Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
+            Write-Host "RECENT EVENTS:" -ForegroundColor $cyanColor
             
             $events = Get-Content $deepLog | Select-Object -Last 10
             if ($events.Count -eq 0) {
-                Write-Host "  No events detected" -ForegroundColor Gray
+                Write-Host "  No events detected" -ForegroundColor $grayColor
             } else {
                 foreach ($event in $events) {
                     if ($event -match "REHANDSHAKE") {
-                        Write-Host "  $event" -ForegroundColor Yellow
+                        Write-Host "  $event" -ForegroundColor $config.colors.yellow
                     } elseif ($event -match "CONNECT") {
-                        Write-Host "  $event" -ForegroundColor Green
+                        Write-Host "  $event" -ForegroundColor $config.colors.green
                     } else {
-                        Write-Host "  $event" -ForegroundColor Gray
+                        Write-Host "  $event" -ForegroundColor $grayColor
                     }
                 }
             }
@@ -415,69 +433,69 @@ if (-not $isAdmin) {
     finally {
         Clear-Host
         
-        # Calculate final score with penalties
+        # Calculate penalties using config
         $penalty = 0
         if ($script:Rehandshakes -gt 0) {
-            $penalty += [Math]::Min(2, $script:Rehandshakes * 0.5)
+            $penalty += [Math]::Min($config.scoring.penaltyLimits.rehandshake, $script:Rehandshakes * $config.scoring.penalties.rehandshake)
         }
         
-        $finalScore = [Math]::Max(1, [Math]::Round($originalBaseScore - $penalty, 0))
+        $finalScore = [Math]::Max($config.scoring.minScore, [Math]::Round($originalBaseScore - $penalty, 0))
         
         # Determine final status
         if (-not $script:IsStable) {
             $finalStatus = "NOT STABLE"
-            $finalColor = "Magenta"
+            $finalColor = $config.colors.magenta
             $degradedReason = "degraded by $script:Rehandshakes re-handshake$(if($script:Rehandshakes -ne 1){'s'})"
-        } elseif ($finalScore -ge 9) {
+        } elseif ($finalScore -ge $config.scoring.thresholds.stable) {
             $finalStatus = "STABLE"
-            $finalColor = "Green"
+            $finalColor = $config.colors.green
             $degradedReason = ""
-        } elseif ($finalScore -ge 6) {
+        } elseif ($finalScore -ge $config.scoring.thresholds.potentiallyUnstable) {
             $finalStatus = "POTENTIALLY UNSTABLE"
-            $finalColor = "Yellow"
+            $finalColor = $config.colors.yellow
             $degradedReason = ""
         } else {
             $finalStatus = "NOT STABLE"
-            $finalColor = "Magenta"
+            $finalColor = $config.colors.magenta
             $degradedReason = "score $finalScore/10"
         }
         
         # Show EVERYTHING
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "USB TREE" -ForegroundColor Cyan
-        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
+        Write-Host "USB TREE" -ForegroundColor $cyanColor
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
         Write-Host $originalTreeOutput
         Write-Host ""
-        Write-Host "Furthest jumps: $originalMaxHops" -ForegroundColor Gray
-        Write-Host "Number of tiers: $originalNumTiers" -ForegroundColor Gray
-        Write-Host "Total devices: $originalTotalDevices" -ForegroundColor Gray
-        Write-Host "Total hubs: $originalTotalHubs" -ForegroundColor Gray
+        Write-Host "Furthest jumps: $originalMaxHops" -ForegroundColor $grayColor
+        Write-Host "Number of tiers: $originalNumTiers" -ForegroundColor $grayColor
+        Write-Host "Total devices: $originalTotalDevices" -ForegroundColor $grayColor
+        Write-Host "Total hubs: $originalTotalHubs" -ForegroundColor $grayColor
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "STABILITY PER PLATFORM (based on $originalMaxHops hops)" -ForegroundColor Cyan
-        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
+        Write-Host "STABILITY PER PLATFORM (based on $originalMaxHops hops)" -ForegroundColor $cyanColor
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
         Write-Host $statusSummaryTerminal
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "HOST SUMMARY" -ForegroundColor Cyan
-        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
+        Write-Host "HOST SUMMARY" -ForegroundColor $cyanColor
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
         Write-Host "Host status: " -NoNewline
         Write-Host "$finalStatus" -ForegroundColor $finalColor
         if ($degradedReason) {
-            Write-Host " ($degradedReason)" -ForegroundColor Gray -NoNewline
+            Write-Host " ($degradedReason)" -ForegroundColor $grayColor -NoNewline
         }
         Write-Host ""
-        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor Gray
+        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor $grayColor
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "BASIC DEEP ANALYTICS COMPLETE" -ForegroundColor Cyan
-        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
+        Write-Host "BASIC DEEP ANALYTICS $($config.messages.complete)" -ForegroundColor $cyanColor
+        Write-Host $config.messages.separator -ForegroundColor $cyanColor
         $elapsedTotal = (Get-Date) - $script:StartTime
-        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
-        Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
+        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor $grayColor
+        Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor $grayColor
         Write-Host ""
         
-        # Generate HTML report with TREE + DEEP analytics
+        # Generate HTML report
         $eventHtml = ""
         foreach ($event in (Get-Content $deepLog)) {
             if ($event -match "REHANDSHAKE") {
@@ -495,20 +513,20 @@ if (-not $isAdmin) {
 <head>
     <title>USB Tree + Deep Analytics Report - $dateStamp</title>
     <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
+        body { background: $($config.reporting.html.backgroundColor); color: $($config.reporting.html.textColor); font-family: $($config.reporting.html.fontFamily); padding: 20px; font-size: 14px; }
+        pre { margin: 0; white-space: pre; }
+        .cyan { color: $($config.colors.cyan); }
+        .green { color: $($config.colors.green); }
+        .yellow { color: $($config.colors.yellow); }
+        .magenta { color: $($config.colors.magenta); }
+        .gray { color: $($config.colors.gray); }
     </style>
 </head>
 <body>
 <pre>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">USB TREE + DEEP ANALYTICS REPORT</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 
 <span class="cyan">USB TREE</span>
 $originalTreeOutput
@@ -518,26 +536,26 @@ $originalTreeOutput
 <span class="gray">Total devices: $originalTotalDevices</span>
 <span class="gray">Total hubs: $originalTotalHubs</span>
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $originalMaxHops hops)</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 $(foreach ($line in $originalStatusLines) {
     $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
     "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
 })
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">DEEP ANALYTICS SUMMARY</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
   Mode:            Basic (Polling)
   Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
   Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
   Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
   Final Score:     $finalScore/10 (base: $originalBaseScore)
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">EVENT LOG</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 $eventHtml
 </pre>
 </body>
@@ -546,25 +564,25 @@ $eventHtml
         
         [System.IO.File]::WriteAllText($deepHtml, $deepHtmlContent, [System.Text.UTF8Encoding]::new($false))
         
-        Write-Host "Log file: $deepLog" -ForegroundColor Gray
-        Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
+        Write-Host "$($config.messages.logSaved) $deepLog" -ForegroundColor $grayColor
+        Write-Host "$($config.messages.htmlSaved) $deepHtml" -ForegroundColor $grayColor
         Write-Host ""
         
-        $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
+        $openDeep = Read-Host $config.messages.htmlPrompt
         if ($openDeep -eq 'y') { Start-Process $deepHtml }
     }
 
 } else {
     # =========================================================================
-    # DEEPER ANALYTICS
+    # DEEPER ANALYTICS (Admin mode)
     # =========================================================================
     Write-Host ""
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "STARTING DEEPER ANALYTICS" -ForegroundColor Magenta
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "Mode: Advanced (CRC, resets, overcurrent, re-handshakes + more)" -ForegroundColor Green
-    Write-Host "Log: $deepLog" -ForegroundColor Gray
-    Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
+    Write-Host $config.messages.separator -ForegroundColor $magentaColor
+    Write-Host $config.messages.startingDeeper -ForegroundColor $magentaColor
+    Write-Host $config.messages.separator -ForegroundColor $magentaColor
+    Write-Host $config.messages.modeDeeper -ForegroundColor $greenColor
+    Write-Host "Log: $deepLog" -ForegroundColor $grayColor
+    Write-Host $config.messages.pressCtrlC -ForegroundColor $grayColor
     Write-Host ""
     
     $previousDevices = $initialDevices.Clone()
@@ -599,7 +617,7 @@ $eventHtml
             
             $previousDevices = $currentMap.Clone()
             
-            # Simulate deeper metrics (in production, this would use ETW)
+            # Simulate deeper metrics (in production, use ETW)
             $random = Get-Random -Minimum 1 -Maximum 1000
             if ($random -gt 990) {
                 $script:CRCFailures++
@@ -619,47 +637,47 @@ $eventHtml
             
             Clear-Host
             
-            # Show ONLY deeper analytics during monitoring
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "DEEPER ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor Magenta
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+            # Show ONLY deeper analytics
+            Write-Host $config.messages.separator -ForegroundColor $magentaColor
+            Write-Host "DEEPER ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor $magentaColor
+            Write-Host $config.messages.separator -ForegroundColor $magentaColor
+            Write-Host $config.messages.pressCtrlC -ForegroundColor $grayColor
             Write-Host ""
             
-            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+            $statusColor = if ($script:IsStable) { $config.colors.green } else { $config.colors.magenta }
             $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
             
             Write-Host "STATUS: " -NoNewline
             Write-Host "$statusText" -ForegroundColor $statusColor
             Write-Host ""
             Write-Host "CRC FAILURES:   " -NoNewline
-            Write-Host "$($script:CRCFailures.ToString('D2'))" -ForegroundColor $(if ($script:CRCFailures -gt 0) { "Magenta" } else { "Gray" })
+            Write-Host "$($script:CRCFailures.ToString('D2'))" -ForegroundColor $(if ($script:CRCFailures -gt 0) { $config.colors.magenta } else { $config.colors.gray })
             Write-Host "BUS RESETS:     " -NoNewline
-            Write-Host "$($script:BusResets.ToString('D2'))" -ForegroundColor $(if ($script:BusResets -gt 0) { "Yellow" } else { "Gray" })
+            Write-Host "$($script:BusResets.ToString('D2'))" -ForegroundColor $(if ($script:BusResets -gt 0) { $config.colors.yellow } else { $config.colors.gray })
             Write-Host "OVERCURRENT:    " -NoNewline
-            Write-Host "$($script:Overcurrent.ToString('D2'))" -ForegroundColor $(if ($script:Overcurrent -gt 0) { "Magenta" } else { "Gray" })
+            Write-Host "$($script:Overcurrent.ToString('D2'))" -ForegroundColor $(if ($script:Overcurrent -gt 0) { $config.colors.magenta } else { $config.colors.gray })
             Write-Host "RE-HANDSHAKES:  " -NoNewline
-            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { $config.colors.yellow } else { $config.colors.gray })
             Write-Host ""
-            Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
+            Write-Host "RECENT EVENTS:" -ForegroundColor $cyanColor
             
             $events = Get-Content $deepLog | Select-Object -Last 10
             if ($events.Count -eq 0) {
-                Write-Host "  No events detected" -ForegroundColor Gray
+                Write-Host "  No events detected" -ForegroundColor $grayColor
             } else {
                 foreach ($event in $events) {
                     if ($event -match "CRC_ERROR") {
-                        Write-Host "  $event" -ForegroundColor Magenta
+                        Write-Host "  $event" -ForegroundColor $config.colors.magenta
                     } elseif ($event -match "OVERCURRENT") {
-                        Write-Host "  $event" -ForegroundColor Magenta
+                        Write-Host "  $event" -ForegroundColor $config.colors.magenta
                     } elseif ($event -match "BUS_RESET") {
-                        Write-Host "  $event" -ForegroundColor Yellow
+                        Write-Host "  $event" -ForegroundColor $config.colors.yellow
                     } elseif ($event -match "REHANDSHAKE") {
-                        Write-Host "  $event" -ForegroundColor Yellow
+                        Write-Host "  $event" -ForegroundColor $config.colors.yellow
                     } elseif ($event -match "CONNECT") {
-                        Write-Host "  $event" -ForegroundColor Green
+                        Write-Host "  $event" -ForegroundColor $config.colors.green
                     } else {
-                        Write-Host "  $event" -ForegroundColor Gray
+                        Write-Host "  $event" -ForegroundColor $grayColor
                     }
                 }
             }
@@ -670,89 +688,88 @@ $eventHtml
     finally {
         Clear-Host
         
-        # Calculate final score with penalties
+        # Calculate penalties using config
         $penalty = 0
         if ($script:Rehandshakes -gt 0) {
-            $penalty += [Math]::Min(2, $script:Rehandshakes * 0.5)
+            $penalty += [Math]::Min($config.scoring.penaltyLimits.rehandshake, $script:Rehandshakes * $config.scoring.penalties.rehandshake)
         }
         if ($script:CRCFailures -gt 0) {
-            $penalty += [Math]::Min(3, $script:CRCFailures)
+            $penalty += [Math]::Min($config.scoring.penaltyLimits.crc, $script:CRCFailures * $config.scoring.penalties.crc)
         }
         if ($script:BusResets -gt 0) {
-            $penalty += [Math]::Min(3, $script:BusResets)
+            $penalty += [Math]::Min($config.scoring.penaltyLimits.busReset, $script:BusResets * $config.scoring.penalties.busReset)
         }
         if ($script:Overcurrent -gt 0) {
-            $penalty += [Math]::Min(4, $script:Overcurrent * 2)
+            $penalty += [Math]::Min($config.scoring.penaltyLimits.overcurrent, $script:Overcurrent * $config.scoring.penalties.overcurrent)
         }
         
-        $finalScore = [Math]::Max(1, [Math]::Round($originalBaseScore - $penalty, 0))
+        $finalScore = [Math]::Max($config.scoring.minScore, [Math]::Round($originalBaseScore - $penalty, 0))
         
         # Determine final status
         if (-not $script:IsStable) {
             $finalStatus = "NOT STABLE"
-            $finalColor = "Magenta"
+            $finalColor = $config.colors.magenta
             
-            # Build degradation reason
             $reasons = @()
             if ($script:CRCFailures -gt 0) { $reasons += "$script:CRCFailures CRC" }
             if ($script:BusResets -gt 0) { $reasons += "$script:BusResets bus reset" }
             if ($script:Overcurrent -gt 0) { $reasons += "$script:Overcurrent overcurrent" }
             if ($script:Rehandshakes -gt 0) { $reasons += "$script:Rehandshakes re-handshake" }
             $degradedReason = "degraded by " + ($reasons -join ", ")
-        } elseif ($finalScore -ge 9) {
+        } elseif ($finalScore -ge $config.scoring.thresholds.stable) {
             $finalStatus = "STABLE"
-            $finalColor = "Green"
+            $finalColor = $config.colors.green
             $degradedReason = ""
-        } elseif ($finalScore -ge 6) {
+        } elseif ($finalScore -ge $config.scoring.thresholds.potentiallyUnstable) {
             $finalStatus = "POTENTIALLY UNSTABLE"
-            $finalColor = "Yellow"
+            $finalColor = $config.colors.yellow
             $degradedReason = ""
         } else {
             $finalStatus = "NOT STABLE"
-            $finalColor = "Magenta"
+            $finalColor = $config.colors.magenta
             $degradedReason = "score $finalScore/10"
         }
         
         # Show EVERYTHING
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "USB TREE" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
+        Write-Host "USB TREE" -ForegroundColor $magentaColor
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
         Write-Host $originalTreeOutput
         Write-Host ""
-        Write-Host "Furthest jumps: $originalMaxHops" -ForegroundColor Gray
-        Write-Host "Number of tiers: $originalNumTiers" -ForegroundColor Gray
-        Write-Host "Total devices: $originalTotalDevices" -ForegroundColor Gray
-        Write-Host "Total hubs: $originalTotalHubs" -ForegroundColor Gray
+        Write-Host "Furthest jumps: $originalMaxHops" -ForegroundColor $grayColor
+        Write-Host "Number of tiers: $originalNumTiers" -ForegroundColor $grayColor
+        Write-Host "Total devices: $originalTotalDevices" -ForegroundColor $grayColor
+        Write-Host "Total hubs: $originalTotalHubs" -ForegroundColor $grayColor
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "STABILITY PER PLATFORM (based on $originalMaxHops hops)" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
+        Write-Host "STABILITY PER PLATFORM (based on $originalMaxHops hops)" -ForegroundColor $magentaColor
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
         Write-Host $statusSummaryTerminal
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "HOST SUMMARY" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
+        Write-Host "HOST SUMMARY" -ForegroundColor $magentaColor
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
         Write-Host "Host status: " -NoNewline
         Write-Host "$finalStatus" -ForegroundColor $finalColor
         if ($degradedReason) {
-            Write-Host " ($degradedReason)" -ForegroundColor Gray -NoNewline
+            Write-Host " ($degradedReason)" -ForegroundColor $grayColor -NoNewline
         }
         Write-Host ""
-        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor Gray
+        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor $grayColor
         Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "DEEPER ANALYTICS COMPLETE" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
+        Write-Host "DEEPER ANALYTICS $($config.messages.complete)" -ForegroundColor $magentaColor
+        Write-Host $config.messages.separator -ForegroundColor $magentaColor
         $elapsedTotal = (Get-Date) - $script:StartTime
-        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
+        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor $grayColor
         Write-Host ""
-        Write-Host "CRC Failures:   $script:CRCFailures" -ForegroundColor $(if ($script:CRCFailures -gt 0) { "Magenta" } else { "Gray" })
-        Write-Host "Bus Resets:     $script:BusResets" -ForegroundColor $(if ($script:BusResets -gt 0) { "Yellow" } else { "Gray" })
-        Write-Host "Overcurrent:    $script:Overcurrent" -ForegroundColor $(if ($script:Overcurrent -gt 0) { "Magenta" } else { "Gray" })
-        Write-Host "Re-handshakes:  $script:Rehandshakes" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+        Write-Host "CRC Failures:   $script:CRCFailures" -ForegroundColor $(if ($script:CRCFailures -gt 0) { $config.colors.magenta } else { $config.colors.gray })
+        Write-Host "Bus Resets:     $script:BusResets" -ForegroundColor $(if ($script:BusResets -gt 0) { $config.colors.yellow } else { $config.colors.gray })
+        Write-Host "Overcurrent:    $script:Overcurrent" -ForegroundColor $(if ($script:Overcurrent -gt 0) { $config.colors.magenta } else { $config.colors.gray })
+        Write-Host "Re-handshakes:  $script:Rehandshakes" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { $config.colors.yellow } else { $config.colors.gray })
         Write-Host ""
         
-        # Generate HTML report with TREE + DEEPER analytics
+        # Generate HTML report
         $eventHtml = ""
         foreach ($event in (Get-Content $deepLog)) {
             if ($event -match "CRC_ERROR") {
@@ -776,20 +793,20 @@ $eventHtml
 <head>
     <title>USB Tree + Deeper Analytics Report - $dateStamp</title>
     <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
+        body { background: $($config.reporting.html.backgroundColor); color: $($config.reporting.html.textColor); font-family: $($config.reporting.html.fontFamily); padding: 20px; font-size: 14px; }
+        pre { margin: 0; white-space: pre; }
+        .cyan { color: $($config.colors.cyan); }
+        .green { color: $($config.colors.green); }
+        .yellow { color: $($config.colors.yellow); }
+        .magenta { color: $($config.colors.magenta); }
+        .gray { color: $($config.colors.gray); }
     </style>
 </head>
 <body>
 <pre>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">USB TREE + DEEPER ANALYTICS REPORT</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 
 <span class="cyan">USB TREE</span>
 $originalTreeOutput
@@ -799,17 +816,17 @@ $originalTreeOutput
 <span class="gray">Total devices: $originalTotalDevices</span>
 <span class="gray">Total hubs: $originalTotalHubs</span>
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $originalMaxHops hops)</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 $(foreach ($line in $originalStatusLines) {
     $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
     "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
 })
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">DEEPER ANALYTICS SUMMARY</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
   Mode:            Advanced (ETW)
   Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
   Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
@@ -820,9 +837,9 @@ $(foreach ($line in $originalStatusLines) {
   Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
   Final Score:     $finalScore/10 (base: $originalBaseScore)
 
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 <span class="cyan">EVENT LOG</span>
-<span class="cyan">==============================================================================</span>
+<span class="cyan">$($config.messages.separator)</span>
 $eventHtml
 </pre>
 </body>
@@ -831,15 +848,15 @@ $eventHtml
         
         [System.IO.File]::WriteAllText($deepHtml, $deepHtmlContent, [System.Text.UTF8Encoding]::new($false))
         
-        Write-Host "Log file: $deepLog" -ForegroundColor Gray
-        Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
+        Write-Host "$($config.messages.logSaved) $deepLog" -ForegroundColor $grayColor
+        Write-Host "$($config.messages.htmlSaved) $deepHtml" -ForegroundColor $grayColor
         Write-Host ""
         
-        $openDeep = Read-Host "Open Deeper Analytics HTML report? (y/n)"
+        $openDeep = Read-Host $config.messages.htmlPrompt
         if ($openDeep -eq 'y') { Start-Process $deepHtml }
     }
 }
 
 Write-Host ""
-Write-Host "Press any key to exit..." -ForegroundColor Gray
+Write-Host $config.messages.exitPrompt -ForegroundColor $grayColor
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
