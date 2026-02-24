@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - macOS Edition (FIXED)
+# USB TREE DIAGNOSTIC TOOL - macOS Edition (FIXED with ioreg)
 # =============================================================================
-# Uses system_profiler SPUSBDataType for USB tree
+# Uses ioreg -p IOUSB for accurate USB tree detection
 # Identical output format to Windows version for side-by-side comparison
 # =============================================================================
 
@@ -24,7 +24,6 @@ echo ""
 # =============================================================================
 # ADMIN CHECK
 # =============================================================================
-ADMIN_MODE=false
 if [ "$EUID" -ne 0 ]; then
     echo -n "Run with sudo for maximum detail? (y/n): "
     read adminChoice
@@ -38,12 +37,11 @@ if [ "$EUID" -ne 0 ]; then
     fi
 else
     echo -e "${GREEN}✓ Running with sudo privileges.${NC}"
-    ADMIN_MODE=true
 fi
 echo ""
 
 # =============================================================================
-# USB DEVICE ENUMERATION
+# USB DEVICE ENUMERATION - Using ioreg for accurate detection
 # =============================================================================
 DATE_STAMP=$(date +"%Y%m%d-%H%M%S")
 OUT_TXT="/tmp/usb-tree-report-$DATE_STAMP.txt"
@@ -51,50 +49,28 @@ OUT_HTML="/tmp/usb-tree-report-$DATE_STAMP.html"
 
 echo -e "${GRAY}Enumerating USB devices...${NC}"
 
-# Parse USB tree from system_profiler
-TREE_OUTPUT=""
-MAX_HOPS=0
-HUBS=0
-DEVICES=0
-
-# Use system_profiler which works without sudo
-if command -v system_profiler &> /dev/null; then
-    # Get USB data and parse it
-    USB_DATA=$(system_profiler SPUSBDataType 2>/dev/null)
+# Use ioreg to get USB tree
+if command -v ioreg &> /dev/null; then
+    # Get USB tree from ioreg
+    USB_IOREG=$(ioreg -p IOUSB -r -w 0 -l 2>/dev/null)
     
-    # Parse the tree structure
+    # Parse the tree
+    TREE_OUTPUT=""
+    MAX_HOPS=0
+    HUBS=0
+    DEVICES=0
+    
+    # Process each line
+    current_level=0
     while IFS= read -r line; do
-        # Skip empty lines
-        if [[ -z "$line" ]]; then
-            continue
-        fi
+        # Count | symbols to determine level
+        level=$(echo "$line" | grep -o "\|" | wc -l)
+        level=$((level / 2))  # Each level adds one pipe
         
-        # Count leading spaces to determine level
-        indent_count=$(echo "$line" | sed -e 's/^\( *\).*/\1/' | wc -c)
-        indent_count=$((indent_count - 1))
-        
-        # Determine level (assuming 2 spaces per level)
-        if [ $indent_count -gt 0 ]; then
-            level=$((indent_count / 2))
-        else
-            level=0
-        fi
-        
-        # Check if this is a device line (contains product name)
-        if [[ "$line" =~ ^[[:space:]]*[^[:space:]]+[:]?[[:space:]]*[^[:space:]]+ ]]; then
-            # Extract device name (remove leading spaces and trailing colon if present)
-            device_name=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/:[[:space:]]*$//')
-            
-            # Skip if it's a property line
-            if [[ "$device_name" == *"Product ID:"* ]] || [[ "$device_name" == *"Vendor ID:"* ]] || \
-               [[ "$device_name" == *"Speed:"* ]] || [[ "$device_name" == *"Manufacturer:"* ]] || \
-               [[ "$device_name" == *"Location ID:"* ]] || [[ "$device_name" == *"Current Available:"* ]] || \
-               [[ "$device_name" == *"Current Required:"* ]] || [[ "$device_name" == *"Extra Operating Current:"* ]] || \
-               [[ "$device_name" == *"Built-In:"* ]] || [[ "$device_name" == *"Serial Number:"* ]] || \
-               [[ "$device_name" == *"Capacity:"* ]] || [[ "$device_name" == *"Removable Media:"* ]] || \
-               [[ "$device_name" == *"BSD Name:"* ]] || [[ "$device_name" == *"Partition Type:"* ]]; then
-                continue
-            fi
+        # Extract device name
+        if [[ "$line" =~ \+\-o\ ([^@<]+) ]]; then
+            device_name="${BASH_REMATCH[1]}"
+            device_name=$(echo "$device_name" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             
             # Check if it's a hub
             is_hub=false
@@ -131,10 +107,30 @@ if command -v system_profiler &> /dev/null; then
                 MAX_HOPS=$level
             fi
         fi
+    done <<< "$USB_IOREG"
+fi
+
+# If no devices found, try system_profiler as fallback
+if [ -z "$TREE_OUTPUT" ] && command -v system_profiler &> /dev/null; then
+    USB_DATA=$(system_profiler SPUSBDataType 2>/dev/null | grep -v ":" | grep -v "^[[:space:]]*$" | sed -e 's/^[[:space:]]*//' | grep -v "^Product ID" | grep -v "^Vendor ID" | grep -v "^Speed" | grep -v "^Manufacturer" | grep -v "^Location ID" | grep -v "^Serial Number")
+    
+    level=0
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            if [[ "$line" == *"Hub"* ]] || [[ "$line" == *"HUB"* ]] || [[ "$line" == *"hub"* ]]; then
+                TREE_OUTPUT="${TREE_OUTPUT}├── ${line} [HUB] ← ${level} hops\n"
+                HUBS=$((HUBS + 1))
+            else
+                TREE_OUTPUT="${TREE_OUTPUT}├── ${line} ← ${level} hops\n"
+                DEVICES=$((DEVICES + 1))
+            fi
+            level=$((level + 1))
+            MAX_HOPS=$level
+        fi
     done <<< "$USB_DATA"
 fi
 
-# If no devices found, set defaults
+# If still no devices found
 if [ -z "$TREE_OUTPUT" ]; then
     TREE_OUTPUT="├── No USB devices detected ← 0 hops\n"
     MAX_HOPS=0
@@ -144,11 +140,11 @@ fi
 
 NUM_TIERS=$((MAX_HOPS + 1))
 STABILITY_SCORE=$((9 - MAX_HOPS))
-if [ $STABILITY_SCORE -lt 1 ]; then STABILITY_SCORE=1; fi
-if [ $STABILITY_SCORE -gt 10 ]; then STABILITY_SCORE=10; fi
+[ $STABILITY_SCORE -lt 1 ] && STABILITY_SCORE=1
+[ $STABILITY_SCORE -gt 10 ] && STABILITY_SCORE=10
 
 # =============================================================================
-# STABILITY ASSESSMENT (identical to Windows version)
+# STABILITY ASSESSMENT
 # =============================================================================
 cat > /tmp/platform_status.txt << 'EOF'
 Windows|5|7
@@ -173,7 +169,7 @@ while IFS='|' read plat rec max; do
     STATUS_LINES="${STATUS_LINES}${plat}|${status}\n"
 done < /tmp/platform_status.txt
 
-# Format for terminal - EACH ON ITS OWN LINE
+# Format for terminal
 STATUS_SUMMARY=""
 while IFS='|' read plat status; do
     if [ -n "$plat" ] && [ -n "$status" ]; then
@@ -182,7 +178,7 @@ while IFS='|' read plat status; do
     fi
 done < <(echo -e "$STATUS_LINES" | grep -v '^$')
 
-# Determine host status (based on Mac Apple Silicon)
+# Determine host status
 MAC_AS_STATUS=$(echo -e "$STATUS_LINES" | grep "Mac Apple Silicon" | cut -d'|' -f2)
 if [ "$MAC_AS_STATUS" = "NOT STABLE" ]; then
     HOST_STATUS="NOT STABLE"
@@ -191,7 +187,6 @@ elif [ "$MAC_AS_STATUS" = "POTENTIALLY UNSTABLE" ]; then
     HOST_STATUS="POTENTIALLY UNSTABLE"
     HOST_COLOR="$YELLOW"
 else
-    # Check if any other platform is not stable
     if echo -e "$STATUS_LINES" | grep -v "Mac Apple Silicon" | grep -q "NOT STABLE"; then
         HOST_STATUS="NOT STABLE"
         HOST_COLOR="$MAGENTA"
@@ -252,9 +247,8 @@ echo ""
 echo -e "${GRAY}Report saved as: $OUT_TXT${NC}"
 
 # =============================================================================
-# HTML REPORT - FIXED: Each platform on its own line
+# HTML REPORT
 # =============================================================================
-# Build HTML platform lines - EACH ON ITS OWN LINE
 PLATFORM_HTML=""
 while IFS='|' read plat status; do
     if [ -n "$plat" ] && [ -n "$status" ]; then
@@ -267,7 +261,6 @@ while IFS='|' read plat status; do
     fi
 done < <(echo -e "$STATUS_LINES" | grep -v '^$')
 
-# Convert color codes to HTML class names
 HOST_COLOR_HTML=""
 if [[ "$HOST_COLOR" == *"32m"* ]]; then
     HOST_COLOR_HTML="green"
@@ -279,7 +272,6 @@ else
     HOST_COLOR_HTML="gray"
 fi
 
-# Clean tree output of ANSI codes for HTML
 CLEAN_TREE=$(echo -e "$TREE_OUTPUT" | sed 's/\\033\[[0-9;]*m//g')
 
 HTML_CONTENT="<!DOCTYPE html>
@@ -310,26 +302,26 @@ HTML_CONTENT="<!DOCTYPE html>
 </head>
 <body>
 <pre>
-<span class="cyan">==============================================================================</span>
-<span class="cyan">USB TREE REPORT - $DATE_STAMP</span>
-<span class="cyan">==============================================================================</span>
+<span class=\"cyan\">==============================================================================</span>
+<span class=\"cyan\">USB TREE REPORT - $DATE_STAMP</span>
+<span class=\"cyan\">==============================================================================</span>
 
 $CLEAN_TREE
 
-<span class="gray">Furthest jumps: $MAX_HOPS</span>
-<span class="gray">Number of tiers: $NUM_TIERS</span>
-<span class="gray">Total devices: $DEVICES</span>
-<span class="gray">Total hubs: $HUBS</span>
+<span class=\"gray\">Furthest jumps: $MAX_HOPS</span>
+<span class=\"gray\">Number of tiers: $NUM_TIERS</span>
+<span class=\"gray\">Total devices: $DEVICES</span>
+<span class=\"gray\">Total hubs: $HUBS</span>
 
-<span class="cyan">==============================================================================</span>
-<span class="cyan">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>
-<span class="cyan">==============================================================================</span>
+<span class=\"cyan\">==============================================================================</span>
+<span class=\"cyan\">STABILITY PER PLATFORM (based on $MAX_HOPS hops)</span>
+<span class=\"cyan\">==============================================================================</span>
 $(echo -e "$PLATFORM_HTML")
-<span class="cyan">==============================================================================</span>
-<span class="cyan">HOST SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  <span class="gray">Host status:     </span><span class="$HOST_COLOR_HTML">$HOST_STATUS</span>
-  <span class="gray">Stability Score: </span><span class="gray">$STABILITY_SCORE/10</span>
+<span class=\"cyan\">==============================================================================</span>
+<span class=\"cyan\">HOST SUMMARY</span>
+<span class=\"cyan\">==============================================================================</span>
+  <span class=\"gray\">Host status:     </span><span class=\"$HOST_COLOR_HTML\">$HOST_STATUS</span>
+  <span class=\"gray\">Stability Score: </span><span class=\"gray\">$STABILITY_SCORE/10</span>
 </pre>
 </body>
 </html>"
@@ -338,12 +330,12 @@ echo "$HTML_CONTENT" > "$OUT_HTML"
 echo -e "${GRAY}HTML report saved as: $OUT_HTML${NC}"
 
 # =============================================================================
-# ASK TO OPEN BROWSER - FIXED: Proper syntax
+# ASK TO OPEN BROWSER - FIXED: No syntax error
 # =============================================================================
 echo ""
 echo -n "Open HTML report in browser? (y/n): "
-read open_choice
-if [ "$open_choice" = "y" ]; then
+read browser_choice
+if [ "$browser_choice" = "y" ]; then
     open "$OUT_HTML" 2>/dev/null || echo -e "${YELLOW}Could not open browser. File saved at: $OUT_HTML${NC}"
 fi
 
