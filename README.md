@@ -8,11 +8,6 @@
 
 A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability across Windows, macOS, and Linux.
 
-**Target audience**  
-- Everyday users who want to quickly check if their USB chain is stable  
-- Technicians and sales people who need to share clear, professional diagnostics
-
-## How to Run (one single line)
 
 Windows:
 ```powershell
@@ -28,155 +23,159 @@ Linux
 ```Terminal
 curl -sSL https://raw.githubusercontent.com/yourname/usb-script/main/lk-lusb-tree-linux.sh | bash
 ```
-Paste above command into **PowerShell** or **Terminal**
+### HOW TO USE THE TOOL
+1. Copy and Paste above command into **PowerShell** or **Terminal**
+2. Run in admin och basic*
+3. view result
+4. view result in browser (copy-paste ready)
+5. if in admin run deep analytict**
 
 
-<h1>USB Tree Diagnostic Tool</h1>
+*not supported on all systems<br>
+**not available in OSX nor Linux without powershell.
 
-<p>A simple tool to visualize USB tree structure (tiers, hops, hubs) and assess stability.</p>
+A lightweight USB diagnostics tool to quickly visualize USB tree structure, count hops/tiers, and assess chain stability — especially useful in corporate BYOD meeting rooms and AV setups.
 
+## Why this tool matters in AV environments
+In modern conference rooms we often see:
+- USB-C docks (Unisynk, HP, Lenovo, Caldicit, Logitech, TiGHT, Hyper, Targus etc..)
+- Multiple hubs daisy-chained
+- Webcams, speakerphones, touch panels, wireless presentation dongles, external drives
+- iPads/iPhones/Android devices brought by users
 
-<p>The tool asks only two questions:</p>
-<ul>
-  <li>Run with admin/sudo for maximum detail? (y/n)</li>
-  <li>Open HTML report in browser? (y/n)</li>
-</ul>
+Long chains frequently cause problems **only on Apple Silicon Macs** (M1/M2/M3/M4), while Windows and Intel Macs usually work fine.  
+This tool helps technicians prove:  
+→ "The chain has 5 hops → Windows & Intel OK, but Apple Silicon not stable"
 
-<h2>Expected Output Examples</h2>
+**Target audience**  
+- Everyday users who needs troubleshooting or sending IT a proper report.
+- Technicians and sales people who need to share clear, professional diagnostics
+- Diagnistics team
+- IT to verify that the system works with system setups
+- POC hard-testing.
 
-<h3>With Admin Rights (answer "y" to first question)</h3>
-<p>Full tree with accurate hops and realistic stability.</p>
+## Windows version – what it can do
+- Shows full hierarchical USB tree with exact hop counts from root
+- Marks hubs clearly [HUB]
+- Calculates furthest hop distance and total tiers
+- Gives per-platform stability verdict (green/orange/pink) with Apple Silicon emphasis
+- Produces beautiful black-background HTML report (looks identical to terminal)
+- **Deep Analytics mode** (admin only): real-time monitoring of USB connect/disconnect events, re-handshakes, random errors
+- Asks smart questions only once: admin? open report?
 
-<div class="terminal">
-<pre>
-USB Diagnostic Tool – Windows priority 1
-===========================================
-Run with admin/sudo for maximum detail? (y/n): y
+###Where macOS and Linux versions do NOT support (yet)
+
+No real-time Deep Analytics / event monitoring (macOS would need log stream, Linux journalctl — not implemented)
+macOS tree is good but less precise hop counting than Windows registry method
+Linux needs usbutils package + sudo for full tree (no auto-elevation like PowerShell)
+No automatic "re-launch as admin" on macOS/Linux (manual sudo)
+
+For AV field use we still recommend Windows laptop as primary diagnostic station — most reliable experience.
+Questions / feature requests → open issue.
+
+###Sample output
+### Example Full Report – Windows Version with Deep Analytics (3-hour run)
+
+This is a realistic example output from a Windows laptop in a typical AV BYOD troubleshooting scenario:
+
+- **Setup**:
+  - Windows 11 laptop
+  - Unisynk Pro AV Dock
+  - 20 m **AOC active optical** USB-C → Poly Studio E60 Camera **(problematic link)**
+  - 5 m passive USB-C to B → Yealink SV80 Camera
+  - 2 m passive USB-A to B → Yamaha RM-CR Adecia DSP
+  - Ethernet adapter via dock
+
+```powershell
+==============================================================================
+USB TREE DIAGNOSTIC TOOL - WINDOWS EDITION
+==============================================================================
+Platform: Windows 11 Pro 23H2 (Build 22631.4169)
+
+Run with admin for maximum detail? (y/n): y
 → Admin mode enabled
+✓ Running with administrator privileges.
 
-Platform: Windows 11 Pro (x64)
-Host USB Max Tiers: 7 (spec) | Max external hubs: 4 (practical)
-Built-in hub: No
-Source: Full admin mode
+Enumerating USB devices...
+Found 12 devices and 6 hubs
 
-=== USB TREE (from physical port) ===
-Root Hub (USB 3.2)
-├── Intel USB 3.2 eXtensible Host Controller
-│ ├── Anker 7-port Hub (Port 1)
-│ │ ├── Logitech Webcam C920 (Port 2) ← 3 hops
-│ │ ├── Samsung T7 SSD (Port 3) ← 3 hops
-│ │ └── iPad Pro M4 USB-C (Port 4) ← 3 hops <span class="unstable">(orange for Mac)</span>
-│ ├── CalDigit TS4 Dock (Port 5) ← 2 hops
-│ │ ├── iPhone 16 Pro USB-C (Port 1) ← 3 hops
-│ │ └── Dell 27" Monitor (Port 2) ← 3 hops
-│ └── Belkin 10-port Hub (Port 6) ← 2 hops
-│ ├── Android Tablet (Samsung) (Port 3) ← 3 hops
-│ └── FURTHER HUB → Razer Mouse Dock (Port 4)
-│ ├── Razer Mouse (Port 1) ← 4 hops ← <span class="unstable">ORANGE</span>
-│ └── External HDD (Port 2) ← 4 hops ← <span class="unstable">ORANGE</span>
-└── FURTHER HUB → Orico 5-bay Hub (Port 7) ← 3 hops
-    └── FURTHER HUB → Cheap no-name 4-port (Port 1) ← 4 hops ← <span class="unstable">ORANGE</span>
-        └── iPhone 15 USB-C (Port 3) ← 5 hops ← <span class="not-stable">PINK</span>
+==============================================================================
+USB TREE
+==============================================================================
+└── USB Root Hub (USB 3.2) [HUB] ← 0 hops
+    ├── Unisynk Pro AV Dock [HUB] ← 1 hop
+    │   ├── Poly Studio E60 Camera ← 2 hops   (via 20m AOC USB-C active optical)
+    │   ├── Yealink SV80 Conference Camera ← 2 hops   (via 5m passive USB-C to B)
+    │   ├── Yamaha RM-CR Adecia DSP ← 2 hops   (via 2m passive USB-A to B)
+    │   ├── Realtek USB GbE Family Controller (Ethernet adapter) ← 2 hops
+    │   └── Generic USB Hub (internal dock) [HUB] ← 2 hops
+    │       └── Built-in dock USB devices (audio/mic passthrough) ← 3 hops
+    └── Intel(R) USB 3.2 eXtensible Host Controller [HUB] ← 1 hop
+        ├── Integrated Webcam ← 2 hops
+        └── Bluetooth Adapter ← 2 hops
 
-Furthest jumps from host: 5
-Number of tiers: 6
-Number of external hubs: 5
-Total connected devices: 12
+Furthest jumps: 3
+Number of tiers: 4
+Total devices: 12
+Total hubs: 6
 
-=== STABILITY PER PLATFORM (based on 5 hops) ===
-Windows:                  <span class="stable">Stable</span> (green – under 5 hops)
-Linux:                    <span class="stable">Stable</span> (green)
-Mac Intel:                <span class="unstable">Unstable</span> (orange – over 4 hops for Intel)
-Mac Apple Silicon:        <span class="not-stable">Not stable</span> (pink – far over 3 hops)
-iPad USB-C (M-series):    <span class="unstable">Unstable</span> (orange)
-iPhone USB-C:             <span class="stable">Stable</span> (green)
-Android Phone (Qualcomm): <span class="stable">Stable</span> (green)
-Android Tablet (Exynos):  <span class="unstable">Unstable</span> (orange)
+==============================================================================
+STABILITY PER PLATFORM (based on 3 hops)
+==============================================================================
+Windows                  STABLE
+Linux                    STABLE
+Mac Intel                STABLE
+Mac Apple Silicon        STABLE           ← borderline at 3 hops
+iPad USB-C (M-series)    POTENTIALLY UNSTABLE
+iPhone USB-C             STABLE
+Android Phone (Qualcomm) STABLE
+Android Tablet (Exynos)  POTENTIALLY UNSTABLE
 
-=== SUMMARY FOR THIS HOST ===
-Host status for this port: <span class="unstable">Unstable</span> (orange)
-Recommended max for Windows: 4 hops / 3 external hubs
-Current: 5 hops / 5 external hubs → OVER LIMIT
+==============================================================================
+HOST SUMMARY
+==============================================================================
+Host status:           STABLE
+Stability Score:       6/10
 
-If unstable: Reduce number of tiers.
+Report saved as: C:\Users\AVTech\AppData\Local\Temp\usb-tree-report-20260224-141245.txt
+HTML report saved as: C:\Users\AVTech\AppData\Local\Temp\usb-tree-report-20260224-141245.html
 
-Report saved as: usb-report-20250223-1007.txt
-Report saved as: usb-report-20250223-1007.html (opens automatically)
-</pre>
-</div>
+Open HTML report in browser? (y/n): y
+(HTML opened – black background with colored status indicators)
 
-<h3>Without Admin Rights</h3>
-<p>Basic tree based on available information.</p>
+Run Deep Analytics to monitor USB stability? (y/n): y
 
-<div class="terminal">
-<pre>
-USB Tree Diagnostic Tool - Windows mode
-Platform: Windows 11 Home
+==============================================================================
+DEEP ANALYTICS - USB Event Monitoring
+==============================================================================
+Monitoring USB connections... Press Ctrl+C to stop
 
-Running with admin: False
-Note: Tree is basic. For full detail, use Git Bash or Linux/macOS.
+Duration: 03:02:17
 
-=== USB Tree (basic) ===
-- USB Root Hub (Ports 10) ← 0 hops
-  - Anker 7-port Hub ← 1 hop
-    - Logitech Webcam ← 2 hops
-    - Samsung T7 SSD ← 2 hops
-    - iPad Pro USB-C ← 2 hops
-  - CalDigit TS4 Dock ← 1 hop
-    - iPhone 16 Pro ← 2 hops
+STATUS: UNSTABLE           ← triggered by Poly E60 instability
 
-Furthest jumps: 2
-Number of tiers: 3
-Total devices: 6
+RANDOM ERRORS:    04
+RE-HANDSHAKES:    03
 
-=== Stability per platform (based on 2 hops) ===
-Windows                  <span class="stable">Stable</span>
-Linux                    <span class="stable">Stable</span>
-Mac Intel                <span class="stable">Stable</span>
-Mac Apple Silicon        <span class="stable">Stable</span>
-iPad USB-C (M-series)    <span class="stable">Stable</span>
-iPhone USB-C             <span class="stable">Stable</span>
-Android Phone (Qualcomm) <span class="stable">Stable</span>
-Android Tablet (Exynos)  <span class="stable">Stable</span>
+RECENT EVENTS:
+  [14:12:45.218] [INFO]          Deep Analytics started
+  [14:15:03.447] [REHANDSHAKE]   Device disconnected   Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [14:15:09.112] [INFO]          Device connected      Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [15:28:56.734] [ERROR]         USB device error detected (timeout/enumeration fail)   Poly Studio E60 Camera
+  [16:41:22.109] [REHANDSHAKE]   Device disconnected   Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [16:41:28.892] [INFO]          Device connected      Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [17:03:14.561] [ERROR]         USB device error detected (link drop/power glitch)   Poly Studio E60 Camera
+  [17:19:47.305] [ERROR]         USB device error detected (timeout/enumeration fail)   Poly Studio E60 Camera
+  [17:35:09.778] [REHANDSHAKE]   Device disconnected   Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [17:35:16.423] [INFO]          Device connected      Poly Studio E60 Camera (Unisynk Pro AV Dock → 20m AOC USB-C)
+  [17:42:55.190] [ERROR]         USB device error detected (link instability)   Poly Studio E60 Camera
 
-=== Host summary ===
-Host status: <span class="stable">Stable</span>
-Stability Score: 7/10
-If unstable: Reduce number of tiers.
+Final status:     UNSTABLE
+Random errors:    4
+Re-handshakes:    3
 
-Report saved as C:\Users\...\usb-tree-report-20260223-1432.txt
-Open HTML report in browser? (y/n)
-</pre>
-</div>
+Log file:  C:\Users\AVTech\AppData\Local\Temp\usb-deep-analytics-20260224-141245.log
+HTML report: C:\Users\AVTech\AppData\Local\Temp\usb-deep-analytics-20260224-141245.html
 
-<h2>Supported Platforms</h2>
-
-<table>
-  <tr><th>Platform</th><th>Without admin</th><th>With admin/sudo</th><th>Detail Level</th></tr>
-  <tr><td>Windows (PowerShell)</td><td>Basic tree</td><td>Improved tree</td><td>Good</td></tr>
-  <tr><td>Linux</td><td>Full tree (lsusb -t)</td><td>Full + extra</td><td>Excellent</td></tr>
-  <tr><td>macOS</td><td>Full tree (system_profiler)</td><td>Full</td><td>Excellent</td></tr>
-  <tr><td>Windows + Git Bash</td><td>Full tree (via bash)</td><td>Full</td><td>Excellent</td></tr>
-</table>
-
-<p>Made to make USB troubleshooting easy for everyone – but detailed enough for professionals.</p>
-
-<p>Questions or improvements? <a href="https://github.com/klangche/usb-script/issues">Open an issue</a>.</p>
-
-
-## How it works
-
-The script queries native OS USB enumeration tools:
-
-- Windows: WMI / PnPDevice
-- Linux: lsusb + sysfs
-- macOS: system_profiler SPUSBDataType
-
-The output is normalized into a tree structure and optionally exported as HTML.
-
-## Limitations
-
-- Requires administrator privileges on some systems
-- Virtual USB devices may not appear
-- Performance depends on OS enumeration speed
-
+Open Deep Analytics HTML report? (y/n): y
+(HTML opened – full chronological log with color-coded events)
