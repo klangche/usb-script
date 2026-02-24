@@ -19,8 +19,6 @@ Write-Host ""
 # Detect OS
 $isWindows = $env:OS -match "Windows"
 $hasBash = Get-Command bash -ErrorAction SilentlyContinue
-$isLinux = $isWindows -eq $false -and (Test-Path "/proc")  # Simple Linux detection
-$isMac = $isWindows -eq $false -and (Test-Path "/System/Library/CoreServices")  # Simple macOS detection
 
 if ($isWindows) {
     Write-Host "✓ Windows detected - using PowerShell version" -ForegroundColor Green
@@ -36,39 +34,30 @@ if ($isWindows) {
         Read-Host "Press Enter to exit"
     }
 }
-elseif ($isLinux -and $hasBash) {
-    Write-Host "✓ Linux detected - using bash version" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Downloading and running Linux script..." -ForegroundColor Gray
-    
-    if (Get-Command curl -ErrorAction SilentlyContinue) {
-        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
-    } else {
-        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
-        $bashScript | bash
-    }
-}
-elseif ($isMac -and $hasBash) {
-    Write-Host "✓ macOS detected - using macOS version" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Downloading and running macOS script..." -ForegroundColor Gray
-    
-    if (Get-Command curl -ErrorAction SilentlyContinue) {
-        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh | bash"
-    } else {
-        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh"
-        $bashScript | bash
-    }
-}
 elseif ($hasBash) {
-    Write-Host "✓ Unix-like system detected - trying Linux script" -ForegroundColor Yellow
+    Write-Host "✓ Unix-like system with bash detected - using bash version" -ForegroundColor Green
     Write-Host ""
+    Write-Host "Downloading and running appropriate script..." -ForegroundColor Gray
     
+    # Try macOS first, fall back to Linux
     if (Get-Command curl -ErrorAction SilentlyContinue) {
-        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
+        # Try macOS script
+        $result = bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh 2>/dev/null | bash 2>/dev/null"
+        if ($LASTEXITCODE -ne 0) {
+            # Fall back to Linux script
+            bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
+        }
     } else {
-        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
-        $bashScript | bash
+        try {
+            $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh"
+            $bashScript | bash 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
+                $bashScript | bash
+            }
+        } catch {
+            Write-Host "Failed to download bash script: $_" -ForegroundColor Red
+        }
     }
 }
 else {
@@ -87,8 +76,5 @@ else {
     Write-Host ""
     Write-Host "For full features, please run on Windows with PowerShell or" -ForegroundColor Gray
     Write-Host "Linux/macOS with bash installed." -ForegroundColor Gray
+    Read-Host "Press Enter to exit"
 }
-
-Write-Host ""
-Write-Host "Press any key to exit..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
