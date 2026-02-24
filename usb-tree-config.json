@@ -1,0 +1,149 @@
+{
+  "version": "2.0.0",
+  "lastUpdated": "2024-01-15",
+  
+  "metadata": {
+    "toolName": "USB Tree Diagnostic Tool",
+    "author": "klangche",
+    "repository": "https://github.com/klangche/usb-script",
+    "docs": "https://github.com/klangche/usb-script/wiki"
+  },
+
+  "scoring": {
+    "baseFormula": "9 - maxHops",
+    "minScore": 1,
+    "maxScore": 10,
+    
+    "penalties": {
+      "rehandshake": 0.5,
+      "crc": 1.0,
+      "busReset": 1.0,
+      "overcurrent": 2.0,
+      "otherError": 0.5
+    },
+    
+    "penaltyLimits": {
+      "rehandshake": 2.0,
+      "crc": 3.0,
+      "busReset": 3.0,
+      "overcurrent": 4.0,
+      "otherError": 2.0
+    },
+    
+    "thresholds": {
+      "stable": 9,
+      "potentiallyUnstable": 6,
+      "notStable": 1
+    }
+  },
+
+  "platforms": {
+    "windows": {
+      "name": "Windows x64",
+      "rec": 5,
+      "max": 7,
+      "color": "#00ffff",
+      "detection": "env:OS -match 'Windows' -and [Environment]::Is64BitOperatingSystem"
+    },
+    "windowsArm": {
+      "name": "Windows ARM",
+      "rec": 3,
+      "max": 5,
+      "color": "#00ffff",
+      "detection": "env:OS -match 'Windows' -and [RuntimeInformation]::ProcessArchitecture -eq 'Arm64'"
+    },
+    "linux": {
+      "name": "Linux x64",
+      "rec": 4,
+      "max": 6,
+      "color": "#00ffff",
+      "detection": "uname -s = Linux && uname -m = x86_64"
+    },
+    "linuxArm": {
+      "name": "Linux ARM",
+      "rec": 3,
+      "max": 5,
+      "color": "#00ffff",
+      "detection": "uname -s = Linux && uname -m = aarch64"
+    },
+    "macIntel": {
+      "name": "Mac Intel",
+      "rec": 5,
+      "max": 7,
+      "color": "#00ffff",
+      "detection": "uname -s = Darwin && uname -m = x86_64"
+    },
+    "macAppleSilicon": {
+      "name": "Mac Apple Silicon",
+      "rec": 3,
+      "max": 5,
+      "color": "#00ffff",
+      "detection": "uname -s = Darwin && uname -m = arm64"
+    }
+  },
+
+  "colors": {
+    "stable": "#00ff00",
+    "potentiallyUnstable": "#ffff00",
+    "notStable": "#ff00ff",
+    "cyan": "#00ffff",
+    "gray": "#c0c0c0",
+    "header": "#00ffff",
+    "warning": "#ffff00",
+    "error": "#ff00ff"
+  },
+
+  "messages": {
+    "welcome": "USB TREE DIAGNOSTIC TOOL",
+    "noDevices": "No USB devices found.",
+    "adminPrompt": "Run with admin for maximum detail? (y/n)",
+    "deepPrompt": "Run deep analytics / stability monitoring? (y/n)",
+    "htmlPrompt": "Open HTML report? (y/n)",
+    "exitPrompt": "Press any key to exit..."
+  },
+
+  "analytics": {
+    "basic": {
+      "name": "Basic Deep Analytics",
+      "description": "Re-handshakes / disconnects only",
+      "counters": ["rehandshake"],
+      "color": "cyan"
+    },
+    "deeper": {
+      "name": "Deeper Analytics",
+      "description": "CRC, resets, overcurrent, re-handshakes",
+      "counters": ["rehandshake", "crc", "busReset", "overcurrent"],
+      "color": "magenta"
+    }
+  },
+
+  "reporting": {
+    "html": {
+      "template": "default",
+      "backgroundColor": "#000000",
+      "textColor": "#e0e0e0",
+      "fontFamily": "Consolas, 'Courier New', monospace",
+      "includeTimestamps": true,
+      "includeEventLog": true
+    },
+    "text": {
+      "separator": "==============================================================================",
+      "includeTree": true,
+      "includeStability": true
+    }
+  },
+
+  "updates": {
+    "checkOnStart": true,
+    "updateUrl": "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-config.json",
+    "autoUpdate": false,
+    "versionCheck": true
+  },
+
+  "debug": {
+    "verbose": false,
+    "logToFile": false,
+    "saveRawData": false,
+    "dumpRegistry": false
+  }
+}
