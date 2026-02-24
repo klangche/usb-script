@@ -71,6 +71,16 @@ No automatic "re-launch as admin" on macOS/Linux (manual sudo)
 For AV field use we still recommend Windows laptop as primary diagnostic station — most reliable experience.
 Questions / feature requests → open issue.
 
+## Script structure
+```
+Repository: klangche/usb-script
+├── lk-usb-tree-windows.ps1           # Powershell launcher
+├── usb-tree-powershell.ps1           # Windows script
+├── lk-usb-tree-linux.sh              # Linux script
+├── lk-usb-tree-macos.sh              # macOS script 
+└── usb-tree-config.json              # Central configuration
+```
+
 ###Sample output
 ### Example Full Report – Windows Version with Deep Analytics (3-hour run)
 
