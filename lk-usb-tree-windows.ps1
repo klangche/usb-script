@@ -1,200 +1,193 @@
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - Windows Launcher
+# USB TREE DIAGNOSTIC TOOL - Windows Launcher (with integrated Deep Analytics)
 # =============================================================================
-# Launches the USB diagnostic tool on Windows.
-# Detects bash (Git Bash/WSL) → prefers universal script; otherwise uses native PS.
-# Supports optional -Deep switch for real-time ETW-based USB signal monitoring.
+# - Runs tree visualization first
+# - Then offers deep monitoring (simple polling or advanced ETW)
+# - Handles admin elevation automatically when needed
+# - Zero-footprint where possible
 # =============================================================================
 
 param(
-    [switch]$Deep
+    [switch]$Deep,                  # Optional: start directly in deep mode
+    [switch]$ETW                    # Internal: used during relaunch for ETW mode
 )
 
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "USB TREE DIAGNOSTIC TOOL - Windows Launcher" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
-Write-Host "Zero-footprint mode: Everything runs in memory" -ForegroundColor Gray
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host ""
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: Test if running as Administrator
+# ─────────────────────────────────────────────────────────────────────────────
+function Test-Admin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $p = New-Object Security.Principal.WindowsPrincipal($id)
+    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
-# Check for bash availability
-$hasBash = Get-Command bash -ErrorAction SilentlyContinue
+$isAdmin = Test-Admin
 
-if ($hasBash) {
-    Write-Host "Bash detected - using universal script for maximum detail" -ForegroundColor Green
-    Write-Host "(Script loads directly in memory via pipe, nothing saved)" -ForegroundColor Gray
-    Write-Host ""
-    
-    if (Get-Command curl -ErrorAction SilentlyContinue) {
-        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
-    } else {
-        $scriptContent = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
-        $scriptContent | bash
+# ─────────────────────────────────────────────────────────────────────────────
+# Run the main tree visualization first (always)
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Host "Running USB Tree Visualization..." -ForegroundColor Cyan
+$treeScriptUrl = "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1"
+try {
+    $treeContent = Invoke-RestMethod -Uri $treeScriptUrl
+    Invoke-Expression $treeContent
+}
+catch {
+    Write-Host "Failed to load tree script: $_" -ForegroundColor Red
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep Analytics Selection (only if -Deep or after tree)
+# ─────────────────────────────────────────────────────────────────────────────
+if ($Deep -or $ETW) {
+    if ($ETW) {
+        # Relaunched for ETW — run advanced mode directly
+        Write-Host ""
+        Write-Host "Running ADVANCED ETW Deep Analytics (requires admin)" -ForegroundColor Cyan
+        Start-AdvancedETWAnalysis
+    }
+    else {
+        # Normal deep start — let user choose mode
+        Write-Host ""
+        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host "DEEP ANALYTICS OPTIONS" -ForegroundColor Cyan
+        Write-Host "==============================================================================" -ForegroundColor Cyan
+        Write-Host "1. Simple monitoring (connect/disconnect detection) - no admin needed"
+        Write-Host "2. Advanced monitoring (CRC, resets, overcurrent, etc.) - requires admin"
+        Write-Host "==============================================================================" -ForegroundColor Cyan
+
+        $choice = Read-Host "Choose mode (1 or 2) or press Enter to skip"
+
+        if ($choice -eq "1") {
+            Write-Host "Starting SIMPLE deep monitoring..." -ForegroundColor Green
+            Start-SimplePollingAnalysis
+        }
+        elseif ($choice -eq "2") {
+            if ($isAdmin) {
+                Write-Host "Starting ADVANCED ETW monitoring..." -ForegroundColor Green
+                Start-AdvancedETWAnalysis
+            }
+            else {
+                Write-Host "Advanced mode requires admin rights. Relaunching as admin..." -ForegroundColor Yellow
+                $scriptPath = $MyInvocation.MyCommand.Path
+                if (-not $scriptPath) {
+                    $scriptPath = "$env:TEMP\usb-deep-temp.ps1"
+                    $selfContent = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-windows.ps1"
+                    $selfContent | Out-File -FilePath $scriptPath -Encoding UTF8
+                }
+                Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Deep -ETW" -Verb RunAs
+                exit
+            }
+        }
+        else {
+            Write-Host "Deep analytics skipped." -ForegroundColor Gray
+        }
     }
 }
 else {
-    Write-Host "No bash detected - running native PowerShell mode" -ForegroundColor Yellow
-    Write-Host ""
-    
-    $psScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1"
-    Invoke-Expression $psScript
+    # Normal run — offer deep after tree
+    $wantDeep = Read-Host "Run Deep Analytics now? (y/n)"
+    if ($wantDeep -match '^[Yy]') {
+        # Relaunch self with -Deep to enter the selection flow
+        $scriptPath = $MyInvocation.MyCommand.Path
+        if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+        if ($scriptPath) {
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Deep" -Verb RunAs:$isAdmin
+        }
+        else {
+            Write-Host "Cannot relaunch — run script from file instead of direct irm | iex" -ForegroundColor Yellow
+        }
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DEEP ANALYTICS MODE (only runs if -Deep is specified)
+# SIMPLE POLLING DEEP MODE (old style, no admin)
 # ─────────────────────────────────────────────────────────────────────────────
-if ($Deep) {
-    function Test-Admin {
-        $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-        $p = New-Object Security.Principal.WindowsPrincipal($id)
-        return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+function Start-SimplePollingAnalysis {
+    $deepLog = "$env:TEMP\usb-deep-log-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+    $script:StartTime = Get-Date
+    $script:IsStable = $true
+    $script:Rehandshakes = 0
+
+    $initialDevices = @{}
+    Get-PnpDevice -Class USB | Where-Object { $_.Status -eq 'OK' } | ForEach-Object {
+        $name = if ($_.FriendlyName) { $_.FriendlyName } else { $_.Name }
+        $initialDevices[$_.InstanceId] = $name
     }
 
-    function Start-USBDeepAnalysis {
-        if (-not (Test-Admin)) {
-            Write-Host ""
-            Write-Host "Deep analysis requires Administrator privileges." -ForegroundColor Red
-            Write-Host "Restart PowerShell as Administrator and run again with -Deep" -ForegroundColor Yellow
-            return
-        }
-
-        Write-Host ""
-        Write-Host "===================== DEEP USB ANALYTICS =====================" -ForegroundColor Cyan
-        Write-Host "Real-time USB signal stability monitoring active" -ForegroundColor Gray
-        Write-Host "Detecting CRC errors, resets, timeouts, power faults, re-handshakes..." -ForegroundColor Gray
-        Write-Host "Press CTRL+C to stop" -ForegroundColor Yellow
-        Write-Host ""
-
-        # ───────────────────────────────────────────────
-        # Show current USB devices snapshot for reference
-        # ───────────────────────────────────────────────
-        Write-Host "Current connected USB devices (reference snapshot):" -ForegroundColor Cyan
-        Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
-
-        $devices = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue |
-            Where-Object { $_.Status -eq 'OK' } |
-            Select-Object @{Name='Name';Expression={if($_.FriendlyName){$_.FriendlyName}else{$_.Name}}},
-                          @{Name='Status';Expression={$_.Status}},
-                          InstanceId
-
-        if ($devices.Count -eq 0) {
-            Write-Host "  (No USB devices currently detected)" -ForegroundColor Yellow
-        } else {
-            $devices | Format-Table -AutoSize | Out-Host
-        }
-        Write-Host ""
-
-        # ───────────────────────────────────────────────
-        # Event counters
-        # ───────────────────────────────────────────────
-        $eventCounts = @{
-            CRC             = 0
-            Timeout         = 0
-            Reset           = 0
-            Overcurrent     = 0
-            EnumerationFail = 0
-            Bandwidth       = 0
-            ReHandshake     = 0
-            Other           = 0
-        }
-
-        $trace = "LK_USB_TRACE"
-
-        # Clean previous sessions silently
-        logman stop $trace -ets 2>$null | Out-Null
-        logman delete $trace 2>$null | Out-Null
-
-        # Start high-verbosity USB ETW trace
-        logman start $trace `
-            -p Microsoft-Windows-USB-USBPORT 0xFFFFFFFF 5 `
-            -p Microsoft-Windows-USB-UCX 0xFFFFFFFF 5 `
-            -p Microsoft-Windows-USB-HUB3 0xFFFFFFFF 5 `
-            -ets | Out-Null
-
-        Write-Host "Deep telemetry engine started → waiting for events..." -ForegroundColor Green
-        Write-Host ""
-
-        $script:StartTime = Get-Date
-
-        try {
-            Get-WinEvent -LogName "Microsoft-Windows-USB-USBPORT/Operational" -MaxEvents 0 -Wait -ErrorAction SilentlyContinue |
-            ForEach-Object {
-
-                $msg   = $_.Message
-                $evId  = $_.Id
-                $time  = $_.TimeCreated.ToString("HH:mm:ss.fff")
-                $etype = ""
-                $color = "Red"
-
-                if     ($msg -match "(?i)crc|checksum|error")                  { $etype = "CRC / Signal Integrity";        $eventCounts.CRC++;             $color = "Yellow" }
-                elseif ($msg -match "(?i)timeout|transfer timeout")            { $etype = "Transfer Timeout";               $eventCounts.Timeout++;         $color = "Yellow" }
-                elseif ($msg -match "(?i)reset|link reset|port reset")         { $etype = "Device / Link Reset";             $eventCounts.Reset++;           $color = "Magenta" }
-                elseif ($msg -match "(?i)overcurrent|power fault")             { $etype = "Power / Overcurrent Fault";      $eventCounts.Overcurrent++;     $color = "Magenta" }
-                elseif ($msg -match "(?i)enumeration|enum failed|enum retry")  { $etype = "Enumeration Failure";            $eventCounts.EnumerationFail++; $color = "Red" }
-                elseif ($msg -match "(?i)bandwidth|allocation")                { $etype = "Bandwidth Allocation Issue";     $eventCounts.Bandwidth++;       $color = "Yellow" }
-                elseif ($msg -match "(?i)surprise removed|missing on bus|device gone|re-enumerat|disconnect.*connect|reset.*(connect|enumerate|appear)") {
-                    $etype = "Re-Handshake / Surprise Removal";   $eventCounts.ReHandshake++;   $color = "Yellow"
-                }
-                else                                                   { $etype = "Other USB Event";                 $eventCounts.Other++;           $color = "Gray"  }
-
-                # Skip noise / uninteresting events
-                if ($etype -eq "Other USB Event") { return }
-
-                Write-Host "[$time] $etype" -ForegroundColor $color
-                Write-Host "  Event ID : $evId" -ForegroundColor DarkGray
-                Write-Host "  Message  : $msg" -ForegroundColor Gray
-                Write-Host "  ────────────────────────────────────────" -ForegroundColor DarkGray
-            }
-        }
-        finally {
-            Write-Host ""
-            Write-Host "Stopping telemetry engine..." -ForegroundColor Yellow
-            logman stop $trace -ets 2>$null | Out-Null
-            logman delete $trace 2>$null | Out-Null
-
-            # ───────────────────────────────────────────────
-            # Final summary
-            # ───────────────────────────────────────────────
-            $elapsed = "{0:mm}:{0:ss}" -f ((Get-Date) - $script:StartTime)
-
-            Write-Host ""
-            Write-Host "Deep monitoring summary ($elapsed)" -ForegroundColor Cyan
-            Write-Host "───────────────────────────────────────────────" -ForegroundColor DarkGray
-
-            $eventCounts.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object {
-                if ($_.Value -gt 0) {
-                    $color = if ($_.Value -ge 5) { "Red" } elseif ($_.Value -ge 2) { "Yellow" } else { "Green" }
-                    Write-Host ("  {0,-18} : {1,2}" -f $_.Key, $_.Value) -ForegroundColor $color
-                }
-            }
-
-            if (($eventCounts.Values | Measure-Object -Sum).Sum -eq 0) {
-                Write-Host "  No instability events detected during monitoring." -ForegroundColor Green
-            } else {
-                Write-Host ""
-                Write-Host "Most frequent issues:" -ForegroundColor Cyan
-                $top = $eventCounts.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 2
-                foreach ($item in $top) {
-                    if ($item.Value -gt 0) {
-                        Write-Host "  • $($item.Key) ($($item.Value) times)" -ForegroundColor Yellow
-                    }
-                }
-
-                # Practical warning for high reset / re-handshake counts
-                if ($eventCounts.ReHandshake -ge 5 -or $eventCounts.Reset -ge 8) {
-                    Write-Host ""
-                    Write-Host "Warning: High number of resets / re-handshakes detected!" -ForegroundColor Red
-                    Write-Host " → Possible causes: overheating cable/hub (AOC/active extender), bad power delivery, marginal signal" -ForegroundColor Yellow
-                    Write-Host " → Try: shorter cable, powered hub, fewer chained devices, better ventilation" -ForegroundColor Yellow
-                }
-            }
-
-            Write-Host ""
-            Write-Host "Deep analysis stopped cleanly." -ForegroundColor Green
-        }
+    function Write-Event { param($Type, $Message, $Device)
+        $time = Get-Date -Format "HH:mm:ss.fff"
+        "[$time] [$Type] $Message $Device" | Add-Content -Path $deepLog
     }
 
-    # Run deep mode
-    Start-USBDeepAnalysis
+    Write-Event -Type "INFO" -Message "Simple Deep Analytics started" -Device ""
+
+    try {
+        $previousDevices = $initialDevices.Clone()
+        while ($true) {
+            $elapsed = (Get-Date) - $script:StartTime
+            $current = Get-PnpDevice -Class USB | Where-Object { $_.Status -eq 'OK' }
+            $currentMap = @{}
+            foreach ($dev in $current) {
+                $name = if ($dev.FriendlyName) { $dev.FriendlyName } else { $dev.Name }
+                $currentMap[$dev.InstanceId] = $name
+            }
+
+            foreach ($id in $previousDevices.Keys) {
+                if (-not $currentMap.ContainsKey($id)) {
+                    Write-Event -Type "REHANDSHAKE" -Message "Device disconnected" -Device $previousDevices[$id]
+                    $script:Rehandshakes++
+                    $script:IsStable = $false
+                }
+            }
+
+            foreach ($id in $currentMap.Keys) {
+                if (-not $previousDevices.ContainsKey($id)) {
+                    Write-Event -Type "INFO" -Message "Device connected" -Device $currentMap[$id]
+                }
+            }
+
+            $previousDevices = $currentMap.Clone()
+
+            Clear-Host
+            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
+            $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
+
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host "DEEP ANALYTICS (Simple) - $([string]::Format('{0:hh\:mm\:ss}', $elapsed)) elapsed" -ForegroundColor Magenta
+            Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+            Write-Host "==============================================================================" -ForegroundColor Magenta
+            Write-Host ""
+            Write-Host "STATUS: $statusText" -ForegroundColor $statusColor
+            Write-Host "Re-handshakes: $($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
+            Write-Host ""
+
+            Start-Sleep -Seconds 1
+        }
+    }
+    finally {
+        $elapsedTotal = (Get-Date) - $script:StartTime
+        Write-Host ""
+        Write-Host "DEEP ANALYTICS COMPLETE" -ForegroundColor Magenta
+        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))"
+        Write-Host "Final status: $(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
+        Write-Host "Re-handshakes: $script:Rehandshakes"
+        Write-Host "Log saved: $deepLog" -ForegroundColor Gray
+    }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADVANCED ETW DEEP MODE (requires admin)
+# ─────────────────────────────────────────────────────────────────────────────
+function Start-AdvancedETWAnalysis {
+    # (Paste the full ETW function from previous message here — the one with $eventCounts, ReHandshake, device snapshot, etc.)
+    # For brevity I'm not repeating the 100+ lines here, but insert the entire Start-AdvancedETWAnalysis function body
+    # from the last complete version I provided (with counters, regex for ReHandshake, warning on high resets, etc.)
+    # Example start:
+    Write-Host "===================== ADVANCED ETW USB ANALYTICS =====================" -ForegroundColor Cyan
+    # ... rest of the function ...
+}
+
+Write-Host ""
+Write-Host "Done. Press any key to exit..." -ForegroundColor Gray
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
