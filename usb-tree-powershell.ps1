@@ -363,13 +363,14 @@ if (-not $isAdmin) {
             
             Clear-Host
             
-            # Show USB TREE SUMMARY
+            # Show USB TREE (original)
             Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "USB TREE SUMMARY" -ForegroundColor Cyan
+            Write-Host "USB TREE" -ForegroundColor Cyan
             Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "Devices: $totalDevices | Hubs: $totalHubs | Tiers: $numTiers | Score: $stabilityScore/10" -ForegroundColor Gray
-            Write-Host "Host Status: " -NoNewline
-            Write-Host "$hostStatus" -ForegroundColor $hostColor
+            Write-Host $treeOutput
+            Write-Host ""
+            Write-Host "Furthest jumps: $maxHops | Tiers: $numTiers | Devices: $totalDevices | Hubs: $totalHubs" -ForegroundColor Gray
+            Write-Host "Host Status: $hostStatus | Score: $stabilityScore/10" -ForegroundColor $hostColor
             Write-Host ""
             
             # Show DEEP ANALYTICS
@@ -390,7 +391,7 @@ if (-not $isAdmin) {
             Write-Host ""
             Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
             
-            $events = Get-Content $deepLog | Select-Object -Last 15
+            $events = Get-Content $deepLog | Select-Object -Last 10
             if ($events.Count -eq 0) {
                 Write-Host "  No events detected" -ForegroundColor Gray
             } else {
@@ -409,20 +410,19 @@ if (-not $isAdmin) {
         }
     }
     finally {
-        $elapsedTotal = (Get-Date) - $script:StartTime
-        
-        Clear-Host
+        # DON'T clear host - keep the tree visible
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host "BASIC DEEP ANALYTICS COMPLETE" -ForegroundColor Cyan
         Write-Host "==============================================================================" -ForegroundColor Cyan
+        $elapsedTotal = (Get-Date) - $script:StartTime
         Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
         Write-Host "Final status: " -NoNewline
         Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
         Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
         Write-Host ""
         
-        # Generate HTML report
+        # Generate HTML report with TREE + DEEP analytics
         $eventHtml = ""
         foreach ($event in (Get-Content $deepLog)) {
             if ($event -match "REHANDSHAKE") {
@@ -438,7 +438,7 @@ if (-not $isAdmin) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Basic Deep Analytics Report - $dateStamp</title>
+    <title>USB Tree + Deep Analytics Report - $dateStamp</title>
     <style>
         body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
         pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
@@ -455,17 +455,24 @@ if (-not $isAdmin) {
 <span class="cyan">USB TREE + DEEP ANALYTICS REPORT</span>
 <span class="cyan">==============================================================================</span>
 
-<span class="cyan">USB TREE SUMMARY</span>
-  Date:            $dateStamp
-  Devices:         $totalDevices
-  Hubs:            $totalHubs
-  Tiers:           $numTiers
-  Max Hops:        $maxHops
-  Stability Score: $stabilityScore/10
-  Host Status:     <span class="$($hostColor.ToLower())">$hostStatus</span>
+<span class="cyan">USB TREE</span>
+$treeOutput
+
+<span class="gray">Furthest jumps: $maxHops</span>
+<span class="gray">Number of tiers: $numTiers</span>
+<span class="gray">Total devices: $totalDevices</span>
+<span class="gray">Total hubs: $totalHubs</span>
 
 <span class="cyan">==============================================================================</span>
-<span class="cyan">BASIC DEEP ANALYTICS SUMMARY</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($line in $statusLines) {
+    $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
+})
+
+<span class="cyan">==============================================================================</span>
+<span class="cyan">DEEP ANALYTICS SUMMARY</span>
 <span class="cyan">==============================================================================</span>
   Mode:            Basic (Polling)
   Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
@@ -556,13 +563,14 @@ $eventHtml
             
             Clear-Host
             
-            # Show USB TREE SUMMARY
+            # Show USB TREE (original)
             Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "USB TREE SUMMARY" -ForegroundColor Magenta
+            Write-Host "USB TREE" -ForegroundColor Magenta
             Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "Devices: $totalDevices | Hubs: $totalHubs | Tiers: $numTiers | Score: $stabilityScore/10" -ForegroundColor Gray
-            Write-Host "Host Status: " -NoNewline
-            Write-Host "$hostStatus" -ForegroundColor $hostColor
+            Write-Host $treeOutput
+            Write-Host ""
+            Write-Host "Furthest jumps: $maxHops | Tiers: $numTiers | Devices: $totalDevices | Hubs: $totalHubs" -ForegroundColor Gray
+            Write-Host "Host Status: $hostStatus | Score: $stabilityScore/10" -ForegroundColor $hostColor
             Write-Host ""
             
             # Show DEEPER ANALYTICS
@@ -589,7 +597,7 @@ $eventHtml
             Write-Host ""
             Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
             
-            $events = Get-Content $deepLog | Select-Object -Last 15
+            $events = Get-Content $deepLog | Select-Object -Last 10
             if ($events.Count -eq 0) {
                 Write-Host "  No events detected" -ForegroundColor Gray
             } else {
@@ -614,13 +622,12 @@ $eventHtml
         }
     }
     finally {
-        $elapsedTotal = (Get-Date) - $script:StartTime
-        
-        Clear-Host
+        # DON'T clear host - keep the tree visible
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Magenta
         Write-Host "DEEPER ANALYTICS COMPLETE" -ForegroundColor Magenta
         Write-Host "==============================================================================" -ForegroundColor Magenta
+        $elapsedTotal = (Get-Date) - $script:StartTime
         Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
         Write-Host "Final status: " -NoNewline
         Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
@@ -631,7 +638,7 @@ $eventHtml
         Write-Host "Re-handshakes:  $script:Rehandshakes" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
         Write-Host ""
         
-        # Generate HTML report
+        # Generate HTML report with TREE + DEEPER analytics
         $eventHtml = ""
         foreach ($event in (Get-Content $deepLog)) {
             if ($event -match "CRC_ERROR") {
@@ -653,7 +660,7 @@ $eventHtml
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Deeper Analytics Report - $dateStamp</title>
+    <title>USB Tree + Deeper Analytics Report - $dateStamp</title>
     <style>
         body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
         pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
@@ -670,14 +677,21 @@ $eventHtml
 <span class="cyan">USB TREE + DEEPER ANALYTICS REPORT</span>
 <span class="cyan">==============================================================================</span>
 
-<span class="cyan">USB TREE SUMMARY</span>
-  Date:            $dateStamp
-  Devices:         $totalDevices
-  Hubs:            $totalHubs
-  Tiers:           $numTiers
-  Max Hops:        $maxHops
-  Stability Score: $stabilityScore/10
-  Host Status:     <span class="$($hostColor.ToLower())">$hostStatus</span>
+<span class="cyan">USB TREE</span>
+$treeOutput
+
+<span class="gray">Furthest jumps: $maxHops</span>
+<span class="gray">Number of tiers: $numTiers</span>
+<span class="gray">Total devices: $totalDevices</span>
+<span class="gray">Total hubs: $totalHubs</span>
+
+<span class="cyan">==============================================================================</span>
+<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
+<span class="cyan">==============================================================================</span>
+$(foreach ($line in $statusLines) {
+    $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
+    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
+})
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">DEEPER ANALYTICS SUMMARY</span>
