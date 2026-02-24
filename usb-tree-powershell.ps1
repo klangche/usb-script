@@ -1,5 +1,5 @@
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition
+# USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition v1.0.0
 # =============================================================================
 # - Runs tree visualization + HTML report
 # - After that, prompts for deep analytics (y/n)
@@ -137,7 +137,7 @@ foreach ($root in $roots) {
 $numTiers = $maxHops + 1
 $totalHubs = $hubs.Count
 $totalDevices = $devices.Count
-$stabilityScore = [Math]::Max(1, 9 - $maxHops)
+$baseStabilityScore = [Math]::Max(1, 9 - $maxHops)
 
 # Platform stability table
 $platforms = @{
@@ -171,7 +171,9 @@ foreach ($line in $statusLines) {
     $statusSummaryTerminal += "$($line.Platform)$pad$($line.Status)`n"
 }
 
-$hostStatus = ($statusLines | Where-Object { $_.Platform -eq "Windows" }).Status
+# Host status follows Apple Silicon
+$appleSiliconStatus = ($statusLines | Where-Object { $_.Platform -eq "Mac Apple Silicon" }).Status
+$hostStatus = $appleSiliconStatus
 $hostColor = if ($hostStatus -eq "STABLE") { "Green" } elseif ($hostStatus -eq "POTENTIALLY UNSTABLE") { "Yellow" } else { "Magenta" }
 
 # Console output
@@ -196,7 +198,7 @@ Write-Host "HOST SUMMARY" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "Host status: " -NoNewline
 Write-Host "$hostStatus" -ForegroundColor $hostColor
-Write-Host "Stability Score: $stabilityScore/10" -ForegroundColor Gray
+Write-Host "Stability Score: $baseStabilityScore/10" -ForegroundColor Gray
 Write-Host ""
 
 # Save text report
@@ -213,7 +215,7 @@ Total hubs: $totalHubs
 STABILITY SUMMARY
 $statusSummaryTerminal
 
-HOST STATUS: $hostStatus (Score: $stabilityScore/10)
+HOST STATUS: $hostStatus (Score: $baseStabilityScore/10)
 "@
 $txtReport | Out-File $outTxt
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
@@ -259,7 +261,7 @@ $(foreach ($line in $statusLines) {
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
   <span class='gray'>Host status:     </span><span class='$($hostColor.ToLower())'>$hostStatus</span>
-  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
+  <span class='gray'>Stability Score: </span><span class='gray'>$baseStabilityScore/10</span>
 </pre>
 </body>
 </html>
@@ -317,16 +319,16 @@ foreach ($dev in (Get-PnpDevice -Class USB | Where-Object { $_.Status -eq 'OK' }
 
 Write-EventLog -Type "INFO" -Message "Deep Analytics started - Mode: $(if ($isAdmin) { 'DEEPER' } else { 'BASIC' })" -Device ""
 
-# Store the original console output to restore later
+# Store original data for final display
 $originalTreeOutput = $treeOutput
 $originalMaxHops = $maxHops
 $originalNumTiers = $numTiers
 $originalTotalDevices = $totalDevices
 $originalTotalHubs = $totalHubs
-$originalStabilityScore = $stabilityScore
+$originalStatusLines = $statusLines
 $originalHostStatus = $hostStatus
 $originalHostColor = $hostColor
-$originalStatusLines = $statusLines
+$originalBaseScore = $baseStabilityScore
 
 if (-not $isAdmin) {
     # =========================================================================
@@ -413,7 +415,34 @@ if (-not $isAdmin) {
     finally {
         Clear-Host
         
-        # Show EVERYTHING (tree + stability + deep analytics summary)
+        # Calculate final score with penalties
+        $penalty = 0
+        if ($script:Rehandshakes -gt 0) {
+            $penalty += [Math]::Min(2, $script:Rehandshakes * 0.5)
+        }
+        
+        $finalScore = [Math]::Max(1, [Math]::Round($originalBaseScore - $penalty, 0))
+        
+        # Determine final status
+        if (-not $script:IsStable) {
+            $finalStatus = "NOT STABLE"
+            $finalColor = "Magenta"
+            $degradedReason = "degraded by $script:Rehandshakes re-handshake$(if($script:Rehandshakes -ne 1){'s'})"
+        } elseif ($finalScore -ge 9) {
+            $finalStatus = "STABLE"
+            $finalColor = "Green"
+            $degradedReason = ""
+        } elseif ($finalScore -ge 6) {
+            $finalStatus = "POTENTIALLY UNSTABLE"
+            $finalColor = "Yellow"
+            $degradedReason = ""
+        } else {
+            $finalStatus = "NOT STABLE"
+            $finalColor = "Magenta"
+            $degradedReason = "score $finalScore/10"
+        }
+        
+        # Show EVERYTHING
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host "USB TREE" -ForegroundColor Cyan
         Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -433,16 +462,18 @@ if (-not $isAdmin) {
         Write-Host "HOST SUMMARY" -ForegroundColor Cyan
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host "Host status: " -NoNewline
-        Write-Host "$originalHostStatus" -ForegroundColor $originalHostColor
-        Write-Host "Stability Score: $originalStabilityScore/10" -ForegroundColor Gray
+        Write-Host "$finalStatus" -ForegroundColor $finalColor
+        if ($degradedReason) {
+            Write-Host " ($degradedReason)" -ForegroundColor Gray -NoNewline
+        }
+        Write-Host ""
+        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host "BASIC DEEP ANALYTICS COMPLETE" -ForegroundColor Cyan
         Write-Host "==============================================================================" -ForegroundColor Cyan
         $elapsedTotal = (Get-Date) - $script:StartTime
         Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
-        Write-Host "Final status: " -NoNewline
-        Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
         Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
         Write-Host ""
         
@@ -502,6 +533,7 @@ $(foreach ($line in $originalStatusLines) {
   Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
   Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
   Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
+  Final Score:     $finalScore/10 (base: $originalBaseScore)
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">EVENT LOG</span>
@@ -567,7 +599,7 @@ $eventHtml
             
             $previousDevices = $currentMap.Clone()
             
-            # Simulate deeper metrics (in real version, this would use ETW)
+            # Simulate deeper metrics (in production, this would use ETW)
             $random = Get-Random -Minimum 1 -Maximum 1000
             if ($random -gt 990) {
                 $script:CRCFailures++
@@ -638,7 +670,50 @@ $eventHtml
     finally {
         Clear-Host
         
-        # Show EVERYTHING (tree + stability + deeper analytics summary)
+        # Calculate final score with penalties
+        $penalty = 0
+        if ($script:Rehandshakes -gt 0) {
+            $penalty += [Math]::Min(2, $script:Rehandshakes * 0.5)
+        }
+        if ($script:CRCFailures -gt 0) {
+            $penalty += [Math]::Min(3, $script:CRCFailures)
+        }
+        if ($script:BusResets -gt 0) {
+            $penalty += [Math]::Min(3, $script:BusResets)
+        }
+        if ($script:Overcurrent -gt 0) {
+            $penalty += [Math]::Min(4, $script:Overcurrent * 2)
+        }
+        
+        $finalScore = [Math]::Max(1, [Math]::Round($originalBaseScore - $penalty, 0))
+        
+        # Determine final status
+        if (-not $script:IsStable) {
+            $finalStatus = "NOT STABLE"
+            $finalColor = "Magenta"
+            
+            # Build degradation reason
+            $reasons = @()
+            if ($script:CRCFailures -gt 0) { $reasons += "$script:CRCFailures CRC" }
+            if ($script:BusResets -gt 0) { $reasons += "$script:BusResets bus reset" }
+            if ($script:Overcurrent -gt 0) { $reasons += "$script:Overcurrent overcurrent" }
+            if ($script:Rehandshakes -gt 0) { $reasons += "$script:Rehandshakes re-handshake" }
+            $degradedReason = "degraded by " + ($reasons -join ", ")
+        } elseif ($finalScore -ge 9) {
+            $finalStatus = "STABLE"
+            $finalColor = "Green"
+            $degradedReason = ""
+        } elseif ($finalScore -ge 6) {
+            $finalStatus = "POTENTIALLY UNSTABLE"
+            $finalColor = "Yellow"
+            $degradedReason = ""
+        } else {
+            $finalStatus = "NOT STABLE"
+            $finalColor = "Magenta"
+            $degradedReason = "score $finalScore/10"
+        }
+        
+        # Show EVERYTHING
         Write-Host "==============================================================================" -ForegroundColor Magenta
         Write-Host "USB TREE" -ForegroundColor Magenta
         Write-Host "==============================================================================" -ForegroundColor Magenta
@@ -658,16 +733,18 @@ $eventHtml
         Write-Host "HOST SUMMARY" -ForegroundColor Magenta
         Write-Host "==============================================================================" -ForegroundColor Magenta
         Write-Host "Host status: " -NoNewline
-        Write-Host "$originalHostStatus" -ForegroundColor $originalHostColor
-        Write-Host "Stability Score: $originalStabilityScore/10" -ForegroundColor Gray
+        Write-Host "$finalStatus" -ForegroundColor $finalColor
+        if ($degradedReason) {
+            Write-Host " ($degradedReason)" -ForegroundColor Gray -NoNewline
+        }
+        Write-Host ""
+        Write-Host "Stability Score: $finalScore/10 (base: $originalBaseScore)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Magenta
         Write-Host "DEEPER ANALYTICS COMPLETE" -ForegroundColor Magenta
         Write-Host "==============================================================================" -ForegroundColor Magenta
         $elapsedTotal = (Get-Date) - $script:StartTime
         Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
-        Write-Host "Final status: " -NoNewline
-        Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
         Write-Host ""
         Write-Host "CRC Failures:   $script:CRCFailures" -ForegroundColor $(if ($script:CRCFailures -gt 0) { "Magenta" } else { "Gray" })
         Write-Host "Bus Resets:     $script:BusResets" -ForegroundColor $(if ($script:BusResets -gt 0) { "Yellow" } else { "Gray" })
@@ -736,11 +813,12 @@ $(foreach ($line in $originalStatusLines) {
   Mode:            Advanced (ETW)
   Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
   Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
-
+  
   CRC Failures:    <span class="$(if ($script:CRCFailures -gt 0) { 'magenta' } else { 'gray' })">$script:CRCFailures</span>
   Bus Resets:      <span class="$(if ($script:BusResets -gt 0) { 'yellow' } else { 'gray' })">$script:BusResets</span>
   Overcurrent:     <span class="$(if ($script:Overcurrent -gt 0) { 'magenta' } else { 'gray' })">$script:Overcurrent</span>
   Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
+  Final Score:     $finalScore/10 (base: $originalBaseScore)
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">EVENT LOG</span>
