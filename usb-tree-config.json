@@ -39,7 +39,7 @@
 
   "platformStability": {
     "windows": {
-      "name": "Windows",
+      "name": "Windows x86",
       "rec": 5,
       "max": 7,
       "detection": {
