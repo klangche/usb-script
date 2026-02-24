@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - Linux Edition
+# USB Tree Diagnostic Tool - Linux Edition
 # =============================================================================
-# Linux-focused version — mirrors PowerShell UX as closely as possible
-# Uses lsusb -t for tree (requires sudo for full hierarchy)
-# Same prompts, colors, stability logic, HTML style
+# This script visualizes the USB device tree on Linux, assesses stability based
+# on hop counts, and generates an HTML report. It uses lsusb for data collection.
+# 
+# Key Features:
+# - Optional sudo for detailed tree view.
+# - Tree parsing with hop levels.
+# - Platform-specific stability ratings.
+# - HTML export mimicking terminal output.
+#
+# TODO: Add support for ARM architectures (e.g., Raspberry Pi specifics).
+# TODO: Integrate sysfs for more power/voltage details if needed.
+#
+# DEBUG TIP: If no devices show, run 'lsusb' manually and check output.
 # =============================================================================
 
-# Colors (match PowerShell)
+# Define colors for consistent output (matches other platform editions).
 CYAN='\033[36m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
@@ -21,15 +31,13 @@ echo -e "${CYAN}================================================================
 echo -e "${GRAY}Platform: Linux ($(uname -r)) ($(uname -m))${RESET}"
 echo ""
 
-# Check lsusb availability
+# Check for lsusb dependency.
 if ! command -v lsusb >/dev/null 2>&1; then
-    echo -e "${YELLOW}Error: lsusb not found. Install usbutils package (apt/yum/dnf/pacman install usbutils)${RESET}"
+    echo -e "${YELLOW}Error: lsusb not found. Install usbutils (e.g., sudo apt install usbutils).${RESET}"
     exit 1
 fi
 
-# =============================================================================
-# Sudo prompt (critical on Linux for lsusb -t tree)
-# =============================================================================
+# Prompt for sudo (required for full tree hierarchy).
 read -p "Run with sudo for maximum detail (full tree)? (y/n): " sudo_choice
 echo ""
 
@@ -41,9 +49,7 @@ else
     echo -e "${YELLOW}Running without sudo → only basic device list (no tree/hops)${RESET}"
 fi
 
-# =============================================================================
-# Collect data
-# =============================================================================
+# Collect USB data.
 echo -e "${GRAY}Enumerating USB devices...${RESET}"
 
 if $use_sudo; then
@@ -54,31 +60,35 @@ else
     raw_list=$(lsusb 2>/dev/null)
 fi
 
+# Error check: No data.
 if [[ -z "$raw_list" ]]; then
     echo -e "${YELLOW}No USB devices detected.${RESET}"
+    # DEBUG TIP: Dump raw output for troubleshooting.
+    echo "Raw list (empty): $raw_list" > /tmp/usb-debug-linux.txt
     exit 1
 fi
 
-# Use tree output if available, else fallback to flat list
+# Use tree if available, else flat list.
 usb_data="${raw_tree:-$raw_list}"
 
-# Simple hop/level parsing from lsusb -t (preserves its built-in tree symbols)
+# Parse tree: Count levels, build output (avoid subshell scoping with here-string).
 tree_output=""
 max_hops=0
 hubs=0
 devices=0
 
-echo "$usb_data" | while IFS= read -r line; do
-    # Count leading spaces/tabs for level (lsusb -t uses spaces)
+while IFS= read -r line; do
+    # Skip empty lines.
+    if [[ -z "$line" ]]; then continue; fi
+
+    # Calculate level from leading spaces (lsusb -t uses ~4 spaces per level).
     leading="${line%%[![:space:]]*}"
+    level=$(( ${#leading} / 4 ))
 
-    level=$(( ${#leading} / 4 ))  # usually 4 spaces per level
-
+    # Trim line.
     trimmed=$(echo "$line" | sed 's/^[[:space:]]*//')
 
-    if [[ -z "$trimmed" ]]; then continue; fi
-
-    # Count hubs/devices roughly
+    # Classify as hub or device.
     if [[ "$trimmed" =~ Hub || "$trimmed" =~ hub ]]; then
         display="[HUB] $trimmed"
         ((hubs++))
@@ -87,23 +97,30 @@ echo "$usb_data" | while IFS= read -r line; do
         ((devices++))
     fi
 
-    # Build tree line with hops
+    # Build tree prefix.
     prefix=""
     for ((i=1; i<=level; i++)); do prefix="${prefix}│   "; done
     if (( level > 0 )); then prefix="${prefix}└── "; fi
 
     tree_output+="${prefix}${display} ← ${level} hops\n"
 
+    # Update max hops.
     (( max_hops = level > max_hops ? level : max_hops ))
-done
+done <<< "$usb_data"
+
+# Error check: Empty tree.
+if [[ -z "$tree_output" ]]; then
+    echo -e "${YELLOW}Warning: Tree parsing failed. Falling back to raw data.${RESET}"
+    tree_output="$usb_data"
+    # DEBUG TIP: Inspect raw data if parsing fails.
+    echo "$usb_data" > /tmp/usb-raw-linux.txt
+fi
 
 num_tiers=$((max_hops + 1))
 stability_score=$(( 9 - max_hops ))
 (( stability_score < 1 )) && stability_score=1
 
-# =============================================================================
-# Terminal output (same structure as PowerShell)
-# =============================================================================
+# Terminal output.
 echo ""
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}USB TREE${RESET}"
@@ -121,7 +138,7 @@ echo -e "${GRAY}Total devices: $devices${RESET}"
 echo -e "${GRAY}Total hubs: $hubs${RESET}"
 echo ""
 
-# Stability table (exact same as PowerShell)
+# Stability table (consistent across platforms).
 echo -e "${CYAN}==============================================================================${RESET}"
 echo -e "${CYAN}STABILITY PER PLATFORM (based on $max_hops hops)${RESET}"
 echo -e "${CYAN}==============================================================================${RESET}"
@@ -166,11 +183,23 @@ echo -e "Host status:           ${host_color}${host_status}${RESET}"
 echo -e "${GRAY}Stability Score:${RESET} $stability_score/10"
 echo ""
 
-# =============================================================================
-# HTML report (black background, Consolas, colors)
-# =============================================================================
+# Generate HTML report (black background, Consolas font).
 timestamp=$(date +"%Y%m%d-%H%M%S")
 html_file="$HOME/usb-tree-report-linux-$timestamp.html"
+
+# Build stability HTML section.
+stability_html=""
+for plat in "${!rec_max_status[@]}"; do
+    IFS=':' read -r rec max _ <<< "${rec_max_status[$plat]}"
+    if (( max_hops <= rec )); then
+        col="green"
+    elif (( max_hops <= max )); then
+        col="yellow"
+    else
+        col="magenta"
+    fi
+    stability_html+="  <span class=\"gray\">$(printf '%-25s' "$plat")</span> <span class=\"$col\">$status</span>\n"
+done
 
 cat > "$html_file" << EOF
 <!DOCTYPE html>
@@ -199,20 +228,20 @@ $(if $use_sudo; then echo "$tree_output"; else echo "(Basic list - run with sudo
 <span class="cyan">==============================================================================</span>
 <span class="cyan">STABILITY PER PLATFORM</span>
 <span class="cyan">==============================================================================</span>
-$(for p in "${!rec_max_status[@]}"; do IFS=':' read rec max _ <<< "${rec_max_status[$p]}";
-  if (( max_hops <= rec )); then col="green"; elif (( max_hops <= max )); then col="yellow"; else col="magenta"; fi;
-  echo "  <span class=\"gray\">$(printf '%-25s' "$p")</span> <span class=\"$col\">$status</span>"; done)
+$stability_html
 
 <span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
-  <span class="gray">Host status:     </span><span class="${host_color/#\\033\[([0-9;]+)m/}">$host_status</span>
+  <span class="gray">Host status:     </span><span class="${host_color:2:-4}">$host_status</span>
   <span class="gray">Stability Score: </span><span class="gray">$stability_score/10</span>
 </pre></body></html>
 EOF
 
+# Fix color extraction in HTML (remove escape codes).
 echo -e "${GRAY}Report saved: $html_file${RESET}"
 
+# Prompt to open report.
 read -p "Open HTML report in browser? (y/n): " open_choice
 if [[ "$open_choice" =~ ^[Yy]$ ]]; then
     if command -v xdg-open >/dev/null; then
