@@ -1,4 +1,3 @@
-
 # =============================================================================
 # USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition
 # =============================================================================
@@ -244,9 +243,20 @@ Write-Host ""
 Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
 
 # =============================================================================
-# HTML REPORT - EXAKT SOM TERMINAL (med explicita radbrytningar)
+# HTML REPORT - EXAKT SOM TERMINAL (med explicit newline-hantering)
 # =============================================================================
-$html = @"
+
+# Bygg plattformsraderna explicit med \r\n
+$platformHtml = ""
+foreach ($line in $statusLines) {
+    $color = if ($line.Status -eq "STABLE") { "green" } 
+             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
+             else { "magenta" }
+    $platformHtml += "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>`r`n"
+}
+
+# Skapa hela HTML-strängen
+$htmlContent = @"
 <!DOCTYPE html>
 <html>
 <head>
@@ -289,13 +299,7 @@ $treeOutput
 <span class="cyan">==============================================================================</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
 <span class="cyan">==============================================================================</span>
-$(foreach ($line in $statusLines) {
-    $color = if ($line.Status -eq "STABLE") { "green" } 
-             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
-             else { "magenta" }
-    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
-}) -join "`n"
-<span class="cyan">==============================================================================</span>
+$platformHtml<span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
   <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
@@ -304,7 +308,10 @@ $(foreach ($line in $statusLines) {
 </body>
 </html>
 "@
-$html | Out-File $outHtml
+
+# Spara med explicit metod som bevarar newlines
+[System.IO.File]::WriteAllText($outHtml, $htmlContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "HTML report saved as: $outHtml" -ForegroundColor Gray
 
 $open = Read-Host "Open HTML report in browser? (y/n)"
 if ($open -eq 'y') { Start-Process $outHtml }
@@ -436,7 +443,29 @@ if ($isElevated) {
             Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
             Write-Host ""
             
-            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (med explicita radbrytningar)
+            # HTML REPORT for Deep Analytics - EXAKT SOM TERMINAL (med explicit newline-hantering)
+            
+            # Bygg plattformsraderna explicit med \r\n för Deep Analytics
+            $daPlatformHtml = ""
+            foreach ($line in $statusLines) {
+                $color = if ($line.Status -eq "STABLE") { "green" } 
+                         elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
+                         else { "magenta" }
+                $daPlatformHtml += "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>`r`n"
+            }
+            
+            # Bygg event-loggen explicit med \r\n
+            $eventHtml = ""
+            foreach ($event in (Get-Content $deepLog)) {
+                if ($event -match "ERROR") {
+                    $eventHtml += "  <span class='magenta'>$event</span>`r`n"
+                } elseif ($event -match "REHANDSHAKE") {
+                    $eventHtml += "  <span class='yellow'>$event</span>`r`n"
+                } else {
+                    $eventHtml += "  <span class='gray'>$event</span>`r`n"
+                }
+            }
+            
             $deepHtmlContent = @"
 <!DOCTYPE html>
 <html>
@@ -480,13 +509,7 @@ $treeOutput
 <span class="cyan">==============================================================================</span>
 <span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
 <span class="cyan">==============================================================================</span>
-$(foreach ($line in $statusLines) {
-    $color = if ($line.Status -eq "STABLE") { "green" } 
-             elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } 
-             else { "magenta" }
-    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$color'>$($line.Status)</span>"
-}) -join "`n"
-<span class="cyan">==============================================================================</span>
+$daPlatformHtml<span class="cyan">==============================================================================</span>
 <span class="cyan">HOST SUMMARY</span>
 <span class="cyan">==============================================================================</span>
   <span class='gray'>Host status:     </span><span class="$($hostColor.ToLower())">$hostStatus</span>
@@ -503,20 +526,13 @@ $(foreach ($line in $statusLines) {
 <span class="cyan">==============================================================================</span>
 <span class="cyan">EVENT LOG (in chronological order)</span>
 <span class="cyan">==============================================================================</span>
-$(foreach ($event in (Get-Content $deepLog)) {
-    if ($event -match "ERROR") {
-        "  <span class='magenta'>$event</span>"
-    } elseif ($event -match "REHANDSHAKE") {
-        "  <span class='yellow'>$event</span>"
-    } else {
-        "  <span class='gray'>$event</span>"
-    }
-}) -join "`n"
-</pre>
+$eventHtml</pre>
 </body>
 </html>
 "@
-            $deepHtmlContent | Out-File -FilePath $deepHtml -Encoding UTF8
+            
+            # Spara med explicit metod som bevarar newlines
+            [System.IO.File]::WriteAllText($deepHtml, $deepHtmlContent, [System.Text.UTF8Encoding]::new($false))
             
             Write-Host "Log file: $deepLog" -ForegroundColor Gray
             Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
