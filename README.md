@@ -18,7 +18,13 @@ Windows:
 ```powershell
 irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.ps1 | iex
 ```
-Paste above command into **PowerShell** 
+
+Mac & Linux
+```Terminal
+curl -sSL https://raw.githubusercontent.com/klangche/usb-script/dev/usb-tree-mac.sh | bash
+```
+
+Paste above command into **PowerShell** or **Terminal**
 
 
 <h1>USB Tree Diagnostic Tool</h1>
