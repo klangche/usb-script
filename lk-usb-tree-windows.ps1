@@ -1,752 +1,92 @@
 # =============================================================================
-# USB TREE DIAGNOSTIC TOOL - Windows PowerShell Edition
+# USB TREE DIAGNOSTIC TOOL - Universal Launcher
 # =============================================================================
-# - Runs tree visualization + HTML report FIRST
-# - THEN prompts for deep analytics (y/n)
-# - No admin → basic deep analytics (re-handshakes only)
-# - Admin → deeper analytics (CRC, resets, overcurrent, re-handshakes + more)
+# Detects OS and runs appropriate version:
+# - Windows: Full PowerShell version with deep analytics
+# - Linux/macOS with bash: Downloads and runs bash version
+# - Others: Basic mode
+#
+# Usage: irm https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-windows.ps1 | iex
 # =============================================================================
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "USB TREE DIAGNOSTIC TOOL - WINDOWS EDITION" -ForegroundColor Cyan
+Write-Host "USB TREE DIAGNOSTIC TOOL - Universal Launcher" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "Platform: Windows $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
+Write-Host "Platform: $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
+Write-Host "Detecting operating system..." -ForegroundColor Gray
 Write-Host ""
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Admin check + smart handling (prompt if not elevated for full detail)
-# ─────────────────────────────────────────────────────────────────────────────
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Detect OS
+$isWindows = $env:OS -match "Windows"
+$hasBash = Get-Command bash -ErrorAction SilentlyContinue
+$isLinux = $isWindows -eq $false -and (Test-Path "/proc")  # Simple Linux detection
+$isMac = $isWindows -eq $false -and (Test-Path "/System/Library/CoreServices")  # Simple macOS detection
 
-if (-not $isAdmin) {
-    $adminChoice = Read-Host "Run with admin for maximum detail (full tree + deeper analytics)? (y/n)"
-    if ($adminChoice -match '^[Yy]') {
-        Write-Host "Relaunching as admin..." -ForegroundColor Yellow
-        
-        $scriptPath = $MyInvocation.MyCommand.Path
-        if (-not $scriptPath) {
-            $scriptPath = "$env:TEMP\usb-tree-temp.ps1"
-            $selfContent = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1"
-            $selfContent | Out-File -FilePath $scriptPath -Encoding UTF8
-        }
-        
-        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
-        exit
-    } else {
-        Write-Host "Running without admin (basic tree + basic deep if selected)" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "✓ Running with admin privileges → full deep analytics available" -ForegroundColor Green
-}
-Write-Host ""
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PART 1: USB TREE ENUMERATION AND REPORTING (ALWAYS RUNS FIRST)
-# ─────────────────────────────────────────────────────────────────────────────
-$dateStamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$outTxt = "$env:TEMP\usb-tree-report-$dateStamp.txt"
-$outHtml = "$env:TEMP\usb-tree-report-$dateStamp.html"
-
-Write-Host "Enumerating USB devices..." -ForegroundColor Gray
-
-$allDevices = Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | Select-Object InstanceId, FriendlyName, Name, Class, @{n='IsHub';e={
-    ($_.FriendlyName -like "*hub*") -or ($_.Name -like "*hub*") -or ($_.Class -eq "USBHub") -or ($_.InstanceId -like "*HUB*")
-}}
-
-if ($allDevices.Count -eq 0) {
-    Write-Host "No USB devices found." -ForegroundColor Yellow
-    exit
-}
-
-$devices = $allDevices | Where-Object { -not $_.IsHub }
-$hubs = $allDevices | Where-Object { $_.IsHub }
-
-Write-Host "Found $($devices.Count) devices and $($hubs.Count) hubs" -ForegroundColor Gray
-
-# Build map for hierarchy
-$map = @{}
-foreach ($d in $allDevices) {
+if ($isWindows) {
+    Write-Host "✓ Windows detected - using PowerShell version" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Downloading main Windows script..." -ForegroundColor Gray
+    
     try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $d.InstanceId.Replace('\','\\')
-        $reg = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
-        $parent = $reg.ParentIdPrefix
-        $map[$d.InstanceId] = @{ 
-            Name = if ($d.FriendlyName) { $d.FriendlyName } else { $d.Name }
-            Parent = $parent
-            Children = @()
-            InstanceId = $d.InstanceId
-            IsHub = $d.IsHub
-        }
+        $mainScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1"
+        Invoke-Expression $mainScript
     } catch {
-        $map[$d.InstanceId] = @{ 
-            Name = if ($d.FriendlyName) { $d.FriendlyName } else { $d.Name }
-            Parent = $null
-            Children = @()
-            InstanceId = $d.InstanceId
-            IsHub = $d.IsHub
-        }
+        Write-Host "Failed to download Windows script: $_" -ForegroundColor Red
+        Write-Host "Please check your internet connection and try again." -ForegroundColor Yellow
+        Read-Host "Press Enter to exit"
     }
 }
-
-# Build hierarchy
-$roots = @()
-foreach ($id in $map.Keys) {
-    $node = $map[$id]
-    if (-not $node.Parent) {
-        $roots += $id
+elseif ($isLinux -and $hasBash) {
+    Write-Host "✓ Linux detected - using bash version" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Downloading and running Linux script..." -ForegroundColor Gray
+    
+    if (Get-Command curl -ErrorAction SilentlyContinue) {
+        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
     } else {
-        foreach ($parentId in $map.Keys) {
-            if ($map[$parentId].Name -like "*$($node.Parent)*" -or $map[$parentId].InstanceId -like "*$($node.Parent)*") {
-                $map[$parentId].Children += $id
-                break
-            }
-        }
+        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
+        $bashScript | bash
     }
 }
-
-# Generate tree
-$treeOutput = ""
-$maxHops = 0
-
-function Print-Tree {
-    param($id, $level, $prefix, $isLast)
+elseif ($isMac -and $hasBash) {
+    Write-Host "✓ macOS detected - using macOS version" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Downloading and running macOS script..." -ForegroundColor Gray
     
-    $node = $map[$id]
-    if (-not $node) { return }
-    
-    $branch = if ($level -eq 0) { "├── " } else { $prefix + $(if ($isLast) { "└── " } else { "├── " }) }
-    
-    $displayName = if ($node.IsHub) { "$($node.Name) [HUB]" } else { $node.Name }
-    $script:treeOutput += "$branch$displayName ← $level hops`n"
-    $script:maxHops = [Math]::Max($script:maxHops, $level)
-    
-    $newPrefix = $prefix + $(if ($isLast) { "    " } else { "│   " })
-    $children = $node.Children
-    
-    for ($i = 0; $i -lt $children.Count; $i++) {
-        Print-Tree -id $children[$i] -level ($level + 1) -prefix $newPrefix -isLast ($i -eq $children.Count - 1)
+    if (Get-Command curl -ErrorAction SilentlyContinue) {
+        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh | bash"
+    } else {
+        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-macos.sh"
+        $bashScript | bash
     }
 }
-
-foreach ($root in $roots) {
-    Print-Tree -id $root -level 0 -prefix "" -isLast $true
-}
-
-$numTiers = $maxHops + 1
-$totalHubs = $hubs.Count
-$totalDevices = $devices.Count
-$stabilityScore = [Math]::Max(1, 9 - $maxHops)
-
-# Platform stability table
-$platforms = @{
-    "Windows"                  = @{rec=5; max=7}
-    "Linux"                    = @{rec=4; max=6}
-    "Mac Intel"                = @{rec=5; max=7}
-    "Mac Apple Silicon"        = @{rec=3; max=5}
-    "iPad USB-C (M-series)"    = @{rec=2; max=4}
-    "iPhone USB-C"             = @{rec=2; max=4}
-    "Android Phone (Qualcomm)" = @{rec=3; max=5}
-    "Android Tablet (Exynos)"  = @{rec=2; max=4}
-}
-
-$statusLines = @()
-foreach ($plat in $platforms.Keys) {
-    $rec = $platforms[$plat].rec
-    $max = $platforms[$plat].max
-    $status = if ($numTiers -le $rec) { "STABLE" } 
-              elseif ($numTiers -le $max) { "POTENTIALLY UNSTABLE" } 
-              else { "NOT STABLE" }
-    $statusLines += [PSCustomObject]@{ Platform = $plat; Status = $status }
-}
-
-$order = @("Windows", "Linux", "Mac Intel", "Mac Apple Silicon", "iPad USB-C (M-series)", "iPhone USB-C", "Android Phone (Qualcomm)", "Android Tablet (Exynos)")
-$statusLines = $statusLines | Sort-Object { $order.IndexOf($_.Platform) }
-
-$maxPlatLen = ($statusLines.Platform | Measure-Object Length -Maximum).Maximum
-$statusSummaryTerminal = ""
-foreach ($line in $statusLines) {
-    $pad = " " * ($maxPlatLen - $line.Platform.Length + 4)
-    $statusSummaryTerminal += "$($line.Platform)$pad$($line.Status)`n"
-}
-
-$hostStatus = ($statusLines | Where-Object { $_.Platform -eq "Windows" }).Status
-$hostColor = if ($hostStatus -eq "STABLE") { "Green" } elseif ($hostStatus -eq "POTENTIALLY UNSTABLE") { "Yellow" } else { "Magenta" }
-
-# Console output
-Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "USB TREE" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host $treeOutput
-Write-Host ""
-Write-Host "Furthest jumps: $maxHops" -ForegroundColor Gray
-Write-Host "Number of tiers: $numTiers" -ForegroundColor Gray
-Write-Host "Total devices: $totalDevices" -ForegroundColor Gray
-Write-Host "Total hubs: $totalHubs" -ForegroundColor Gray
-Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "STABILITY PER PLATFORM (based on $maxHops hops)" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host $statusSummaryTerminal
-Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "HOST SUMMARY" -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "Host status: " -NoNewline
-Write-Host "$hostStatus" -ForegroundColor $hostColor
-Write-Host "Stability Score: $stabilityScore/10" -ForegroundColor Gray
-Write-Host ""
-
-# Save text report
-$txtReport = @"
-USB TREE REPORT - $dateStamp
-
-$treeOutput
-
-Furthest jumps: $maxHops
-Number of tiers: $numTiers
-Total devices: $totalDevices
-Total hubs: $totalHubs
-
-STABILITY SUMMARY
-$statusSummaryTerminal
-
-HOST STATUS: $hostStatus (Score: $stabilityScore/10)
-"@
-$txtReport | Out-File $outTxt
-Write-Host "Report saved as: $outTxt" -ForegroundColor Gray
-
-# Generate HTML report
-$htmlContent = @"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>USB Tree Report - $dateStamp</title>
-    <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
-    </style>
-</head>
-<body>
-<pre>
-<span class="cyan">==============================================================================</span>
-<span class="cyan">USB TREE REPORT - $dateStamp</span>
-<span class="cyan">==============================================================================</span>
-
-$treeOutput
-
-<span class="gray">Furthest jumps: $maxHops</span>
-<span class="gray">Number of tiers: $numTiers</span>
-<span class="gray">Total devices: $totalDevices</span>
-<span class="gray">Total hubs: $totalHubs</span>
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">STABILITY PER PLATFORM (based on $maxHops hops)</span>
-<span class="cyan">==============================================================================</span>
-$(foreach ($line in $statusLines) {
-    $col = if ($line.Status -eq "STABLE") { "green" } elseif ($line.Status -eq "POTENTIALLY UNSTABLE") { "yellow" } else { "magenta" }
-    "  <span class='gray'>$($line.Platform.PadRight(25))</span> <span class='$col'>$($line.Status)</span>`r`n"
-})
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">HOST SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  <span class='gray'>Host status:     </span><span class='$($hostColor.ToLower())'>$hostStatus</span>
-  <span class='gray'>Stability Score: </span><span class='gray'>$stabilityScore/10</span>
-</pre>
-</body>
-</html>
-"@
-$htmlContent | Out-File $outHtml -Encoding UTF8
-Write-Host "HTML report saved as: $outHtml" -ForegroundColor Gray
-
-# Prompt to open HTML
-$openHtml = Read-Host "Open HTML report? (y/n)"
-if ($openHtml -eq 'y') { Start-Process $outHtml }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PART 2: DEEP ANALYTICS PROMPT (AFTER TREE IS DISPLAYED)
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host ""
-$wantDeep = Read-Host "Run deep analytics / stability monitoring? (y/n)"
-if ($wantDeep -notmatch '^[Yy]') {
-    Write-Host "Deep analytics skipped." -ForegroundColor Gray
-    Write-Host "Press any key to exit..." -ForegroundColor Gray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PART 3: DEEP ANALYTICS (RUNS AFTER TREE, INCLUDES ALL PREVIOUS DATA)
-# ─────────────────────────────────────────────────────────────────────────────
-$deepLog = "$env:TEMP\usb-deep-log-$dateStamp.txt"
-$deepHtml = "$env:TEMP\usb-deep-report-$dateStamp.html"
-
-# Initialize common counters
-$script:StartTime = Get-Date
-$script:IsStable = $true
-$script:Rehandshakes = 0
-$script:InitialDeviceCount = $devices.Count
-
-# Initialize deeper counters (always exist but only populate in admin mode)
-$script:CRCFailures = 0
-$script:BusResets = 0
-$script:Overcurrent = 0
-$script:OtherErrors = 0
-
-function Write-EventLog {
-    param($Type, $Message, $Device)
-    $time = Get-Date -Format "HH:mm:ss.fff"
-    $logLine = "[$time] [$Type] $Message $Device"
-    Add-Content -Path $deepLog -Value $logLine
-}
-
-# Initial device snapshot for connection tracking
-$initialDevices = @{}
-foreach ($dev in (Get-PnpDevice -Class USB | Where-Object { $_.Status -eq 'OK' })) {
-    $name = if ($dev.FriendlyName) { $dev.FriendlyName } else { $dev.Name }
-    $initialDevices[$dev.InstanceId] = $name
-}
-
-Write-EventLog -Type "INFO" -Message "Deep Analytics started - Mode: $(if ($isAdmin) { 'DEEPER' } else { 'BASIC' })" -Device ""
-
-if (-not $isAdmin) {
-    # =========================================================================
-    # BASIC DEEP ANALYTICS (Polling mode - re-handshakes only)
-    # =========================================================================
-    Write-Host ""
-    Write-Host "==============================================================================" -ForegroundColor Cyan
-    Write-Host "STARTING BASIC DEEP ANALYTICS" -ForegroundColor Cyan
-    Write-Host "==============================================================================" -ForegroundColor Cyan
-    Write-Host "Mode: Basic (re-handshakes / disconnects only)" -ForegroundColor Yellow
-    Write-Host "Log: $deepLog" -ForegroundColor Gray
-    Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
+elseif ($hasBash) {
+    Write-Host "✓ Unix-like system detected - trying Linux script" -ForegroundColor Yellow
     Write-Host ""
     
-    # Monitoring loop
-    try {
-        $previousDevices = $initialDevices.Clone()
-        
-        while ($true) {
-            $elapsed = (Get-Date) - $script:StartTime
-            
-            $current = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' }
-            $currentMap = @{}
-            foreach ($dev in $current) { 
-                $name = if ($dev.FriendlyName) { $dev.FriendlyName } else { $dev.Name }
-                $currentMap[$dev.InstanceId] = $name
-            }
-            
-            # Check for disconnections (re-handshakes)
-            foreach ($id in $previousDevices.Keys) {
-                if (-not $currentMap.ContainsKey($id)) {
-                    Write-EventLog -Type "REHANDSHAKE" -Message "Device disconnected" -Device $previousDevices[$id]
-                    $script:Rehandshakes++
-                    $script:IsStable = $false
-                }
-            }
-            
-            # Check for new connections
-            foreach ($id in $currentMap.Keys) {
-                if (-not $previousDevices.ContainsKey($id)) {
-                    Write-EventLog -Type "CONNECT" -Message "Device connected" -Device $currentMap[$id]
-                }
-            }
-            
-            $previousDevices = $currentMap.Clone()
-            
-            # Clear and update display
-            Clear-Host
-            
-            # Show USB TREE SUMMARY at top (from previously collected data)
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "USB TREE SUMMARY" -ForegroundColor Cyan
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "Devices: $totalDevices | Hubs: $totalHubs | Tiers: $numTiers | Score: $stabilityScore/10" -ForegroundColor Gray
-            Write-Host "Host Status: " -NoNewline
-            Write-Host "$hostStatus" -ForegroundColor $hostColor
-            Write-Host ""
-            
-            # Show DEEP ANALYTICS section
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "BASIC DEEP ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor Cyan
-            Write-Host "==============================================================================" -ForegroundColor Cyan
-            Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
-            Write-Host ""
-            
-            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
-            $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
-            
-            Write-Host "STATUS: " -NoNewline
-            Write-Host "$statusText" -ForegroundColor $statusColor
-            Write-Host ""
-            Write-Host "RE-HANDSHAKES: " -NoNewline
-            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
-            Write-Host ""
-            Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
-            
-            $events = Get-Content $deepLog | Select-Object -Last 15
-            if ($events.Count -eq 0) {
-                Write-Host "  No events detected" -ForegroundColor Gray
-            } else {
-                foreach ($event in $events) {
-                    if ($event -match "REHANDSHAKE") {
-                        Write-Host "  $event" -ForegroundColor Yellow
-                    } elseif ($event -match "CONNECT") {
-                        Write-Host "  $event" -ForegroundColor Green
-                    } else {
-                        Write-Host "  $event" -ForegroundColor Gray
-                    }
-                }
-            }
-            
-            Start-Sleep -Seconds 1
-        }
+    if (Get-Command curl -ErrorAction SilentlyContinue) {
+        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
+    } else {
+        $bashScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
+        $bashScript | bash
     }
-    finally {
-        # Generate summary and reports
-        $elapsedTotal = (Get-Date) - $script:StartTime
-        
-        Clear-Host
-        Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "BASIC DEEP ANALYTICS COMPLETE" -ForegroundColor Cyan
-        Write-Host "==============================================================================" -ForegroundColor Cyan
-        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
-        Write-Host "Final status: " -NoNewline
-        Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
-        Write-Host "Re-handshakes: $script:Rehandshakes" -ForegroundColor Gray
-        Write-Host ""
-        
-        # Generate HTML report for basic deep analytics (INCLUDING TREE DATA)
-        $eventHtml = ""
-        foreach ($event in (Get-Content $deepLog)) {
-            if ($event -match "REHANDSHAKE") {
-                $eventHtml += "  <span class='yellow'>$event</span>`r`n"
-            } elseif ($event -match "CONNECT") {
-                $eventHtml += "  <span class='green'>$event</span>`r`n"
-            } else {
-                $eventHtml += "  <span class='gray'>$event</span>`r`n"
-            }
-        }
-        
-        $deepHtmlContent = @"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>USB Basic Deep Analytics Report - $dateStamp</title>
-    <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
-    </style>
-</head>
-<body>
-<pre>
-<span class="cyan">==============================================================================</span>
-<span class="cyan">USB TREE + DEEP ANALYTICS REPORT</span>
-<span class="cyan">==============================================================================</span>
-
-<span class="cyan">USB TREE SUMMARY</span>
-  Date:            $dateStamp
-  Devices:         $totalDevices
-  Hubs:            $totalHubs
-  Tiers:           $numTiers
-  Max Hops:        $maxHops
-  Stability Score: $stabilityScore/10
-  Host Status:     <span class="$($hostColor.ToLower())">$hostStatus</span>
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">BASIC DEEP ANALYTICS SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  Mode:            Basic (Polling)
-  Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
-  Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
-  Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">EVENT LOG</span>
-<span class="cyan">==============================================================================</span>
-$eventHtml
-</pre>
-</body>
-</html>
-"@
-        
-        [System.IO.File]::WriteAllText($deepHtml, $deepHtmlContent, [System.Text.UTF8Encoding]::new($false))
-        
-        Write-Host "Log file: $deepLog" -ForegroundColor Gray
-        Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
-        Write-Host ""
-        
-        $openDeep = Read-Host "Open Deep Analytics HTML report? (y/n)"
-        if ($openDeep -eq 'y') { Start-Process $deepHtml }
-    }
-
-} else {
-    # =========================================================================
-    # DEEPER ANALYTICS (ETW mode - CRC, resets, overcurrent, re-handshakes + more)
-    # =========================================================================
+}
+else {
+    Write-Host "⚠ Unknown platform - running basic mode" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "STARTING DEEPER ANALYTICS" -ForegroundColor Magenta
-    Write-Host "==============================================================================" -ForegroundColor Magenta
-    Write-Host "Mode: Advanced (CRC, resets, overcurrent, re-handshakes + more)" -ForegroundColor Green
-    Write-Host "Log: $deepLog" -ForegroundColor Gray
-    Write-Host "Press Ctrl+C to stop monitoring" -ForegroundColor Gray
-    Write-Host ""
-    
-    # Start ETW trace for USB (simplified - will need actual provider names)
-    $traceName = "USB_TRACE_$([System.IO.Path]::GetRandomFileName())"
+    Write-Host "Basic USB device information:" -ForegroundColor Cyan
     
     try {
-        # Attempt to start ETW trace (this may need adjustment based on Windows version)
-        try {
-            logman create trace $traceName -p "Microsoft-Windows-USB-UCX" -o "$env:TEMP\usb-etw.etl" -ets -ErrorAction SilentlyContinue
-            logman start $traceName -ets -ErrorAction SilentlyContinue
-            $etwEnabled = $true
-        } catch {
-            $etwEnabled = $false
-            Write-EventLog -Type "WARNING" -Message "ETW tracing not available - falling back to enhanced polling" -Device ""
-        }
-        
-        $previousDevices = $initialDevices.Clone()
-        
-        while ($true) {
-            $elapsed = (Get-Date) - $script:StartTime
-            
-            # ===== DEVICE CONNECTION TRACKING (same as basic mode) =====
-            $current = Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' }
-            $currentMap = @{}
-            foreach ($dev in $current) { 
-                $name = if ($dev.FriendlyName) { $dev.FriendlyName } else { $dev.Name }
-                $currentMap[$dev.InstanceId] = $name
-            }
-            
-            # Check for disconnections (re-handshakes)
-            foreach ($id in $previousDevices.Keys) {
-                if (-not $currentMap.ContainsKey($id)) {
-                    Write-EventLog -Type "REHANDSHAKE" -Message "Device disconnected" -Device $previousDevices[$id]
-                    $script:Rehandshakes++
-                    $script:IsStable = $false
-                }
-            }
-            
-            # Check for new connections
-            foreach ($id in $currentMap.Keys) {
-                if (-not $previousDevices.ContainsKey($id)) {
-                    Write-EventLog -Type "CONNECT" -Message "Device connected" -Device $currentMap[$id]
-                }
-            }
-            
-            $previousDevices = $currentMap.Clone()
-            
-            # ===== ETW EVENT MONITORING (additional deeper metrics) =====
-            if ($etwEnabled) {
-                # Query ETW events (simplified - would need actual implementation)
-                # This is a placeholder for actual ETW event processing
-                $random = Get-Random -Minimum 1 -Maximum 100
-                if ($random -gt 95) {  # Simulate occasional errors for demo
-                    $script:CRCFailures++
-                    Write-EventLog -Type "CRC_ERROR" -Message "CRC failure detected" -Device ""
-                    $script:IsStable = $false
-                }
-                if ($random -gt 97) {
-                    $script:BusResets++
-                    Write-EventLog -Type "BUS_RESET" -Message "Bus reset occurred" -Device ""
-                    $script:IsStable = $false
-                }
-                if ($random -gt 98) {
-                    $script:Overcurrent++
-                    Write-EventLog -Type "OVERCURRENT" -Message "Overcurrent condition" -Device ""
-                    $script:IsStable = $false
-                }
-            }
-            
-            # Clear and update display
-            Clear-Host
-            
-            # Show USB TREE SUMMARY at top (from previously collected data)
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "USB TREE SUMMARY" -ForegroundColor Magenta
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "Devices: $totalDevices | Hubs: $totalHubs | Tiers: $numTiers | Score: $stabilityScore/10" -ForegroundColor Gray
-            Write-Host "Host Status: " -NoNewline
-            Write-Host "$hostStatus" -ForegroundColor $hostColor
-            Write-Host ""
-            
-            # Show DEEPER ANALYTICS section
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "DEEPER ANALYTICS - Elapsed: $([string]::Format('{0:hh\:mm\:ss}', $elapsed))" -ForegroundColor Magenta
-            Write-Host "==============================================================================" -ForegroundColor Magenta
-            Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
-            Write-Host ""
-            
-            $statusColor = if ($script:IsStable) { "Green" } else { "Magenta" }
-            $statusText = if ($script:IsStable) { "STABLE" } else { "UNSTABLE" }
-            
-            Write-Host "STATUS: " -NoNewline
-            Write-Host "$statusText" -ForegroundColor $statusColor
-            Write-Host ""
-            Write-Host "CRC FAILURES:   " -NoNewline
-            Write-Host "$($script:CRCFailures.ToString('D2'))" -ForegroundColor $(if ($script:CRCFailures -gt 0) { "Magenta" } else { "Gray" })
-            Write-Host "BUS RESETS:     " -NoNewline
-            Write-Host "$($script:BusResets.ToString('D2'))" -ForegroundColor $(if ($script:BusResets -gt 0) { "Yellow" } else { "Gray" })
-            Write-Host "OVERCURRENT:    " -NoNewline
-            Write-Host "$($script:Overcurrent.ToString('D2'))" -ForegroundColor $(if ($script:Overcurrent -gt 0) { "Magenta" } else { "Gray" })
-            Write-Host "RE-HANDSHAKES:  " -NoNewline
-            Write-Host "$($script:Rehandshakes.ToString('D2'))" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
-            if ($script:OtherErrors -gt 0) {
-                Write-Host "OTHER ERRORS:   " -NoNewline
-                Write-Host "$($script:OtherErrors.ToString('D2'))" -ForegroundColor Yellow
-            }
-            Write-Host ""
-            Write-Host "RECENT EVENTS:" -ForegroundColor Cyan
-            
-            $events = Get-Content $deepLog | Select-Object -Last 15
-            if ($events.Count -eq 0) {
-                Write-Host "  No events detected" -ForegroundColor Gray
-            } else {
-                foreach ($event in $events) {
-                    if ($event -match "CRC_ERROR") {
-                        Write-Host "  $event" -ForegroundColor Magenta
-                    } elseif ($event -match "OVERCURRENT") {
-                        Write-Host "  $event" -ForegroundColor Magenta
-                    } elseif ($event -match "BUS_RESET") {
-                        Write-Host "  $event" -ForegroundColor Yellow
-                    } elseif ($event -match "REHANDSHAKE") {
-                        Write-Host "  $event" -ForegroundColor Yellow
-                    } elseif ($event -match "CONNECT") {
-                        Write-Host "  $event" -ForegroundColor Green
-                    } elseif ($event -match "WARNING") {
-                        Write-Host "  $event" -ForegroundColor Yellow
-                    } else {
-                        Write-Host "  $event" -ForegroundColor Gray
-                    }
-                }
-            }
-            
-            Start-Sleep -Seconds 1
-        }
+        Get-PnpDevice -Class USB | Where-Object {$_.Status -eq 'OK'} | 
+        Select-Object FriendlyName, Class, Status | 
+        Format-Table -AutoSize
+    } catch {
+        Write-Host "Unable to enumerate USB devices." -ForegroundColor Red
     }
-    finally {
-        # Stop ETW trace if it was started
-        if ($etwEnabled) {
-            try {
-                logman stop $traceName -ets -ErrorAction SilentlyContinue
-                logman delete $traceName -ErrorAction SilentlyContinue
-            } catch {}
-        }
-        
-        $elapsedTotal = (Get-Date) - $script:StartTime
-        
-        Clear-Host
-        Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "DEEPER ANALYTICS COMPLETE" -ForegroundColor Magenta
-        Write-Host "==============================================================================" -ForegroundColor Magenta
-        Write-Host "Duration: $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))" -ForegroundColor Gray
-        Write-Host "Final status: " -NoNewline
-        Write-Host "$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })" -ForegroundColor $(if ($script:IsStable) { "Green" } else { "Magenta" })
-        Write-Host ""
-        Write-Host "CRC Failures:   $script:CRCFailures" -ForegroundColor $(if ($script:CRCFailures -gt 0) { "Magenta" } else { "Gray" })
-        Write-Host "Bus Resets:     $script:BusResets" -ForegroundColor $(if ($script:BusResets -gt 0) { "Yellow" } else { "Gray" })
-        Write-Host "Overcurrent:    $script:Overcurrent" -ForegroundColor $(if ($script:Overcurrent -gt 0) { "Magenta" } else { "Gray" })
-        Write-Host "Re-handshakes:  $script:Rehandshakes" -ForegroundColor $(if ($script:Rehandshakes -gt 0) { "Yellow" } else { "Gray" })
-        if ($script:OtherErrors -gt 0) {
-            Write-Host "Other Errors:   $script:OtherErrors" -ForegroundColor Yellow
-        }
-        Write-Host ""
-        
-        # Generate HTML report for deeper analytics (INCLUDING TREE DATA)
-        $eventHtml = ""
-        foreach ($event in (Get-Content $deepLog)) {
-            if ($event -match "CRC_ERROR") {
-                $eventHtml += "  <span class='magenta'>$event</span>`r`n"
-            } elseif ($event -match "OVERCURRENT") {
-                $eventHtml += "  <span class='magenta'>$event</span>`r`n"
-            } elseif ($event -match "BUS_RESET") {
-                $eventHtml += "  <span class='yellow'>$event</span>`r`n"
-            } elseif ($event -match "REHANDSHAKE") {
-                $eventHtml += "  <span class='yellow'>$event</span>`r`n"
-            } elseif ($event -match "CONNECT") {
-                $eventHtml += "  <span class='green'>$event</span>`r`n"
-            } elseif ($event -match "WARNING") {
-                $eventHtml += "  <span class='yellow'>$event</span>`r`n"
-            } else {
-                $eventHtml += "  <span class='gray'>$event</span>`r`n"
-            }
-        }
-        
-        $deepHtmlContent = @"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>USB Deeper Analytics Report - $dateStamp</title>
-    <style>
-        body { background: #000000; color: #e0e0e0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; font-size: 14px; }
-        pre { margin: 0; font-family: 'Consolas', 'Courier New', monospace; white-space: pre; }
-        .cyan { color: #00ffff; }
-        .green { color: #00ff00; }
-        .yellow { color: #ffff00; }
-        .magenta { color: #ff00ff; }
-        .gray { color: #c0c0c0; }
-    </style>
-</head>
-<body>
-<pre>
-<span class="cyan">==============================================================================</span>
-<span class="cyan">USB TREE + DEEPER ANALYTICS REPORT</span>
-<span class="cyan">==============================================================================</span>
-
-<span class="cyan">USB TREE SUMMARY</span>
-  Date:            $dateStamp
-  Devices:         $totalDevices
-  Hubs:            $totalHubs
-  Tiers:           $numTiers
-  Max Hops:        $maxHops
-  Stability Score: $stabilityScore/10
-  Host Status:     <span class="$($hostColor.ToLower())">$hostStatus</span>
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">DEEPER ANALYTICS SUMMARY</span>
-<span class="cyan">==============================================================================</span>
-  Mode:            Advanced (ETW)
-  Duration:        $([string]::Format('{0:hh\:mm\:ss}', $elapsedTotal))
-  Final status:    <span class="$(if ($script:IsStable) { 'green' } else { 'magenta' })">$(if ($script:IsStable) { 'STABLE' } else { 'UNSTABLE' })</span>
-
-  CRC Failures:    <span class="$(if ($script:CRCFailures -gt 0) { 'magenta' } else { 'gray' })">$script:CRCFailures</span>
-  Bus Resets:      <span class="$(if ($script:BusResets -gt 0) { 'yellow' } else { 'gray' })">$script:BusResets</span>
-  Overcurrent:     <span class="$(if ($script:Overcurrent -gt 0) { 'magenta' } else { 'gray' })">$script:Overcurrent</span>
-  Re-handshakes:   <span class="$(if ($script:Rehandshakes -gt 0) { 'yellow' } else { 'gray' })">$script:Rehandshakes</span>
-
-<span class="cyan">==============================================================================</span>
-<span class="cyan">EVENT LOG</span>
-<span class="cyan">==============================================================================</span>
-$eventHtml
-</pre>
-</body>
-</html>
-"@
-        
-        [System.IO.File]::WriteAllText($deepHtml, $deepHtmlContent, [System.Text.UTF8Encoding]::new($false))
-        
-        Write-Host "Log file: $deepLog" -ForegroundColor Gray
-        Write-Host "HTML report: $deepHtml" -ForegroundColor Gray
-        Write-Host ""
-        
-        $openDeep = Read-Host "Open Deeper Analytics HTML report? (y/n)"
-        if ($openDeep -eq 'y') { Start-Process $deepHtml }
-    }
+    
+    Write-Host ""
+    Write-Host "For full features, please run on Windows with PowerShell or" -ForegroundColor Gray
+    Write-Host "Linux/macOS with bash installed." -ForegroundColor Gray
 }
 
 Write-Host ""
