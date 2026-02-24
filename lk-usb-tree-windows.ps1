@@ -1,10 +1,15 @@
 # =============================================================================
-# ACTIVATE USB TREE - Windows Launcher
+# USB Tree Diagnostic Tool - Windows Launcher
 # =============================================================================
-# This script launches the USB diagnostic tool on Windows
-# It automatically detects if bash is available and chooses the best method
+# Launches the USB diagnostic on Windows. Checks for bash (e.g., Git Bash) and
+# falls back to native PowerShell if not available. Downloads scripts in-memory
+# for zero-footprint execution.
 #
-# Zero-footprint: Everything runs in memory
+# Updates: Removed references to removed 'activate' scripts. Uses current repo files.
+#
+# TODO: Add WSL detection for better cross-compat.
+#
+# DEBUG TIP: If download fails, check internet or run 'Invoke-RestMethod' manually.
 # =============================================================================
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -15,27 +20,26 @@ Write-Host "Zero-footprint mode: Everything runs in memory" -ForegroundColor Gra
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if bash is available (Git Bash, WSL, etc.)
+# Check for bash availability.
 $hasBash = Get-Command bash -ErrorAction SilentlyContinue
 
 if ($hasBash) {
-    Write-Host "Bash detected - using universal script for maximum detail" -ForegroundColor Green
-    Write-Host "(Script loads directly in memory via pipe, nothing saved)" -ForegroundColor Gray
+    Write-Host "Bash detected - using Linux-compatible script for max detail" -ForegroundColor Green
+    Write-Host "(Loads in memory via pipe, no files saved)" -ForegroundColor Gray
     Write-Host ""
     
-    # Use curl if available, otherwise PowerShell download
+    # Download and run (prefer curl if available).
     if (Get-Command curl -ErrorAction SilentlyContinue) {
-        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh | bash"
+        bash -c "curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh | bash"
     } else {
-        $scriptContent = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-terminal.sh"
+        $scriptContent = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/lk-usb-tree-linux.sh"
         $scriptContent | bash
     }
-}
-else {
+} else {
     Write-Host "No bash detected - running native PowerShell mode" -ForegroundColor Yellow
     Write-Host ""
     
-    # Run PowerShell version directly
+    # Download and execute PowerShell version.
     $psScript = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/klangche/usb-script/main/usb-tree-powershell.ps1"
     Invoke-Expression $psScript
 }
