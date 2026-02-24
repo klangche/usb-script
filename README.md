@@ -82,7 +82,8 @@ This is a realistic example output from a Windows laptop in a typical AV BYOD tr
   - 20 m **AOC active optical** USB-C → Poly Studio E60 Camera **(problematic link)**
   - 5 m passive USB-C to B → Yealink SV80 Camera
   - 2 m passive USB-A to B → Yamaha RM-CR Adecia DSP
-  - Ethernet adapter via dock
+  - Ethernet adapter via dock even tho one is built in
+  - known problemati aoc cable.
 
 ```powershell
 ==============================================================================
