@@ -21,7 +21,7 @@ irm https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree
 
 Mac & Linux
 ```Terminal
-curl -sSL https://raw.githubusercontent.com/klangche/usb-script/dev/usb-tree-mac.sh | bash
+curl -sSL https://raw.githubusercontent.com/klangche/usb-script/main/activate-usb-tree.sh | bash
 ```
 
 Paste above command into **PowerShell** or **Terminal**
