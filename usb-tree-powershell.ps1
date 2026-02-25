@@ -527,7 +527,6 @@ if (-not $isAdmin) {
 <span class="cyan">USB TREE + DEEP ANALYTICS REPORT</span>
 <span class="cyan">$($Config.reporting.html.separator)</span>
 
-<span class="cyan">USB TREE</span>
 $originalTreeOutput
 
 <span class="gray">$($Config.messages.en.furthestJumps): $originalMaxHops</span>
@@ -864,4 +863,5 @@ $eventHtml
 Write-Host ""
 Write-Host $Config.messages.en.exitPrompt -ForegroundColor (Get-Color "gray")
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
 
