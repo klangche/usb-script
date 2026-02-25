@@ -21,7 +21,7 @@ Linux
 ```Terminal
 curl -sSL https://raw.githubusercontent.com/yourname/usb-script/main/lk-lusb-tree-linux.sh | bash
 ```
-### HOW TO USE THE TOOL
+## HOW TO USE THE TOOL
 1. Copy and Paste above command into **PowerShell** or **Terminal**
 2. Run in admin och basic*
 3. view result
@@ -34,7 +34,7 @@ curl -sSL https://raw.githubusercontent.com/yourname/usb-script/main/lk-lusb-tre
 
 A lightweight USB diagnostics tool to quickly visualize USB tree structure, count hops/tiers, and assess chain stability — especially useful in corporate BYOD meeting rooms and AV setups.
 
-## Why this tool matters in AV environments
+# Why this tool matters in AV environments
 In modern conference rooms we often see:
 - USB-C docks (Unisynk, HP, Lenovo, Caldicit, Logitech, TiGHT, Hyper, Targus etc..)
 - Multiple hubs daisy-chained
@@ -45,7 +45,7 @@ Long chains frequently cause problems **only on Apple Silicon Macs** (M1/M2/M3/M
 This tool helps technicians prove:  
 → "The chain has 5 hops → Windows & Intel OK, but Apple Silicon not stable"
 
-**Target audience**  
+*# Target audience**  
 - Everyday users who needs troubleshooting or sending IT a proper report.
 - Technicians and sales people who need to share clear, professional diagnostics
 - Diagnistics team
@@ -61,8 +61,7 @@ This tool helps technicians prove:
 - **Deep Analytics mode** (admin only): real-time monitoring of USB connect/disconnect events, re-handshakes, random errors
 - Asks smart questions only once: admin? open report?
 
-###Where macOS and Linux versions do NOT support (yet)
-
+# Where macOS and Linux versions do NOT support (yet)
 No real-time Deep Analytics / event monitoring (macOS would need log stream, Linux journalctl — not implemented)
 macOS tree is good but less precise hop counting than Windows registry method
 Linux needs usbutils package + sudo for full tree (no auto-elevation like PowerShell)
@@ -71,7 +70,7 @@ No automatic "re-launch as admin" on macOS/Linux (manual sudo)
 For AV field use we still recommend Windows laptop as primary diagnostic station — most reliable experience.
 Questions / feature requests → open issue.
 
-## Script structure
+# Script structure
 ```
 Repository: klangche/usb-script
 ├── lk-usb-tree-windows.ps1           # Powershell launcher
@@ -93,7 +92,7 @@ This is a realistic example output from a Windows laptop in a typical AV BYOD tr
   - 5 m passive USB-C to B → Yealink SV80 Camera
   - 2 m passive USB-A to B → Yamaha RM-CR Adecia DSP
   - Ethernet adapter via dock even tho one is built in
-  - known problemati aoc cable.
+  - **known problemati aoc cable.**
 
 ```powershell
 ==============================================================================
